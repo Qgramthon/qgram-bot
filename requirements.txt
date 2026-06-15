@@ -1,4 +1,4 @@
 flask
-telethon==1.38.1
+telethon
 cryptg
 gunicorn
