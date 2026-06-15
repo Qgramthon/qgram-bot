@@ -119,12 +119,13 @@ def api_verify():
         d = request.json
         phone, code, pw = d['phone'], d['code'], d.get('password', '')
         if phone not in pending_logins:
-            return jsonify({'success': False, 'message': 'Session expired'})
+            return jsonify({'success': False, 'message': 'Session expired - please restart'})
         p = pending_logins[phone]
         client = p['client']
         loop = p['loop']
         asyncio.set_event_loop(loop)
         async def v():
+            # نتأكد إنه متصل ونفضل مستنيين
             if not client.is_connected():
                 await client.connect()
             try:
