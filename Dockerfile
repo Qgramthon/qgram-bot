@@ -9,4 +9,5 @@ COPY server.py .
 
 EXPOSE 5000
 
-CMD ["gunicorn", "server:app", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "1", "--timeout", "120"]
+ENTRYPOINT ["sh", "-c"]
+CMD ["gunicorn server:app --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 1 --timeout 120"]
