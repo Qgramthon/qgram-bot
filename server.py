@@ -140,7 +140,7 @@ def api_verify():
                 return False, "Code expired"
             
             bot = create_user_bot(p['api_id'], p['api_hash'], phone)
-            await bot.connect()
+            await bot.start()
             active_clients[phone] = bot
             del pending_logins[phone]
             return True, "ok"
