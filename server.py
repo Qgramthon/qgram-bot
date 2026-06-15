@@ -138,7 +138,6 @@ def api_verify():
                 return False, "Invalid code"
             except PhoneCodeExpiredError:
                 return False, "Code expired"
-            await client.disconnect()
             bot = create_user_bot(p['api_id'], p['api_hash'], phone)
             await bot.start(phone=phone)
             active_clients[phone] = bot
