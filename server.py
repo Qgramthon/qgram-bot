@@ -104,12 +104,11 @@ def api_send_code():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         async def s():
-            client = TelegramClient(str(SESSIONS_DIR / f"t_{phone}"), api_id, api_hash)
-            await client.start(phone=phone)
+            client = TelegramClient(str(SESSIONS_DIR / f"t_{phone}"), api_id, api_hash, loop=loop)
+            await client.connect()
             r = await client.send_code_request(phone)
-            pending_logins[phone] = {'client': client, 'hash': r.phone_code_hash}
+            pending_logins[phone] = {'client': client, 'hash': r.phone_code_hash, 'api_id': api_id, 'api_hash': api_hash, 'loop': loop}
         loop.run_until_complete(s())
-        loop.close()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)[:150]})
@@ -123,7 +122,7 @@ def api_verify():
             return jsonify({'success': False, 'message': 'Session expired'})
         p = pending_logins[phone]
         client = p['client']
-        loop = asyncio.new_event_loop()
+        loop = p['loop']
         asyncio.set_event_loop(loop)
         async def v():
             try:
@@ -133,13 +132,13 @@ def api_verify():
                 else: return False, "2FA required"
             except PhoneCodeInvalidError: return False, "Invalid code"
             except PhoneCodeExpiredError: return False, "Code expired"
-            bot = create_user_bot(d['api_id'], d['api_hash'], phone)
+            await client.disconnect()
+            bot = create_user_bot(p['api_id'], p['api_hash'], phone)
             await bot.start(phone=phone)
             active_clients[phone] = bot
             del pending_logins[phone]
             return True, "ok"
         ok, msg = loop.run_until_complete(v())
-        loop.close()
         return jsonify({'success': ok, 'message': msg if not ok else 'ok'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)[:150]})
