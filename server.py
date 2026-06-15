@@ -125,6 +125,8 @@ def api_verify():
         loop = p['loop']
         asyncio.set_event_loop(loop)
         async def v():
+            if not client.is_connected():
+                await client.connect()
             try:
                 await client.sign_in(phone=phone, code=code, phone_code_hash=p['hash'])
             except SessionPasswordNeededError:
