@@ -2,44 +2,89 @@ import asyncio
 import threading
 from functools import wraps
 from typing import Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor
+import logging
 
 from flask import Flask, jsonify, request
 from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
+# إعداد logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
+
+# حل المشكلة: استخدام event loop واحد ثابت للتطبيق كله
+main_loop = asyncio.new_event_loop()
+thread_pool = ThreadPoolExecutor(max_workers=10)
 
 active_clients: Dict[str, TelegramClient] = {}
 pending_logins: Dict[str, Tuple[TelegramClient, str, int, str]] = {}
 
+def run_async_in_main_loop(coro):
+    """تشغيل coroutine في الـ main event loop بأمان"""
+    future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+    return future.result(timeout=30)  # انتظار النتيجة مع timeout
+
 def async_route(f):
+    """ديكوريتور للمسارات غير المتزامنة"""
     @wraps(f)
     def wrapper(*args, **kwargs):
-        return asyncio.run(f(*args, **kwargs))
+        try:
+            return run_async_in_main_loop(f(*args, **kwargs))
+        except Exception as e:
+            logger.error(f"Error in async route: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
     return wrapper
 
-def run_client_background(client: TelegramClient, phone: str):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async def runner():
+def start_client_in_background(client: TelegramClient, phone: str):
+    """تشغيل العميل في background thread مع الـ main loop"""
+    async def run_client():
         try:
-            await client.start()
-            print(f"✅ UserBot Started for {phone}")
+            if not client.is_connected():
+                await client.connect()
+            
+            if not await client.is_user_authorized():
+                logger.error(f"Client not authorized for {phone}")
+                return
+            
+            logger.info(f"✅ UserBot Started for {phone}")
+            
+            # إعداد handlers
+            await setup_handlers(client)
+            
+            # تشغيل العميل
             await client.run_until_disconnected()
+            
         except Exception as e:
-            print(f"❌ Error {phone}: {e}")
-    loop.run_until_complete(runner())
+            logger.error(f"❌ Error {phone}: {e}")
+            if phone in active_clients:
+                del active_clients[phone]
+    
+    # تشغيل في الـ main loop
+    asyncio.run_coroutine_threadsafe(run_client(), main_loop)
 
 async def setup_handlers(client: TelegramClient):
+    """إعداد handlers للعميل"""
     @client.on(events.NewMessage(pattern='/ping'))
     async def ping(event):
         await event.reply("Pong! البوت شغال يا صاحبي ⚡")
 
+def start_main_loop():
+    """تشغيل الـ event loop الرئيسي في thread منفصل"""
+    asyncio.set_event_loop(main_loop)
+    main_loop.run_forever()
+
+# تشغيل الـ main loop في الخلفية عند بدء التطبيق
+loop_thread = threading.Thread(target=start_main_loop, daemon=True)
+loop_thread.start()
+
 # ====================== الصفحة الرئيسية الجميلة ======================
 @app.route('/')
 def home():
+    # نفس HTML السابق بدون تغيير
     html = """
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -133,16 +178,20 @@ def home():
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 
-                const res = await fetch('/api/send_code', { method: 'POST', body: formData });
-                const data = await res.json();
+                try {
+                    const res = await fetch('/api/send_code', { method: 'POST', body: formData });
+                    const data = await res.json();
 
-                if (data.status === 'code_sent') {
-                    document.getElementById('verify_phone').value = formData.get('phone');
-                    document.getElementById('step1').classList.add('hidden');
-                    document.getElementById('step2').classList.remove('hidden');
-                    showResult(data.message, true);
-                } else {
-                    showResult(data.message || data.error || 'حدث خطأ', false);
+                    if (data.status === 'code_sent') {
+                        document.getElementById('verify_phone').value = formData.get('phone');
+                        document.getElementById('step1').classList.add('hidden');
+                        document.getElementById('step2').classList.remove('hidden');
+                        showResult(data.message, true);
+                    } else {
+                        showResult(data.message || data.error || 'حدث خطأ', false);
+                    }
+                } catch (error) {
+                    showResult('حدث خطأ في الاتصال بالخادم', false);
                 }
             });
 
@@ -150,14 +199,18 @@ def home():
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 
-                const res = await fetch('/api/verify', { method: 'POST', body: formData });
-                const data = await res.json();
+                try {
+                    const res = await fetch('/api/verify', { method: 'POST', body: formData });
+                    const data = await res.json();
 
-                if (data.status === 'success') {
-                    showResult(data.message, true);
-                    setTimeout(() => location.reload(), 3000);
-                } else {
-                    showResult(data.message || 'فشل التفعيل', false);
+                    if (data.status === 'success') {
+                        showResult(data.message, true);
+                        setTimeout(() => location.reload(), 3000);
+                    } else {
+                        showResult(data.message || 'فشل التفعيل', false);
+                    }
+                } catch (error) {
+                    showResult('حدث خطأ في الاتصال بالخادم', false);
                 }
             });
 
@@ -184,15 +237,20 @@ async def send_code():
         if not api_id or not api_hash or not phone:
             return jsonify({"status": "error", "message": "يجب ملء جميع الحقول"}), 400
 
+        # إنشاء عميل جديد
         client = TelegramClient(StringSession(), api_id, api_hash)
+        
+        # الاتصال بالعميل
         await client.connect()
 
+        # التحقق إذا كان مفعل مسبقاً
         if await client.is_user_authorized():
-            await setup_handlers(client)
             active_clients[phone] = client
-            threading.Thread(target=run_client_background, args=(client, phone), daemon=True).start()
+            # تشغيل العميل في الخلفية
+            start_client_in_background(client, phone)
             return jsonify({"status": "already_active", "message": "البوت مفعل بالفعل"})
 
+        # إرسال كود التحقق
         sent = await client.send_code_request(phone)
         pending_logins[phone] = (client, sent.phone_code_hash, api_id, api_hash)
 
@@ -202,6 +260,7 @@ async def send_code():
         })
 
     except Exception as e:
+        logger.error(f"Error in send_code: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -218,24 +277,32 @@ async def verify():
     client, phone_code_hash, _, _ = pending_logins[phone]
 
     try:
-        await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
-    except SessionPasswordNeededError:
-        if not password:
-            return jsonify({"status": "error", "message": "مطلوب كلمة مرور التحقق بخطوتين"}), 401
-        await client.sign_in(password=password)
+        # محاولة تسجيل الدخول
+        try:
+            await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+        except SessionPasswordNeededError:
+            if not password:
+                return jsonify({
+                    "status": "error", 
+                    "message": "مطلوب كلمة مرور التحقق بخطوتين"
+                }), 401
+            await client.sign_in(password=password)
+        
+        # إعداد handlers وتشغيل العميل
+        active_clients[phone] = client
+        del pending_logins[phone]
+        
+        # تشغيل العميل في الخلفية
+        start_client_in_background(client, phone)
+        
+        return jsonify({
+            "status": "success",
+            "message": "تم تفعيل اليوزربوت بنجاح! 🎉"
+        })
+        
     except Exception as e:
+        logger.error(f"Error in verify: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
-
-    await setup_handlers(client)
-    active_clients[phone] = client
-    del pending_logins[phone]
-
-    threading.Thread(target=run_client_background, args=(client, phone), daemon=True).start()
-
-    return jsonify({
-        "status": "success",
-        "message": "تم تفعيل اليوزربوت بنجاح! 🎉"
-    })
 
 
 @app.route('/api/status')
@@ -246,5 +313,19 @@ def status():
     })
 
 
+@app.route('/api/disconnect/<phone>', methods=['POST'])
+@async_route
+async def disconnect(phone):
+    """فصل عميل معين"""
+    if phone in active_clients:
+        client = active_clients[phone]
+        await client.disconnect()
+        del active_clients[phone]
+        return jsonify({"status": "success", "message": f"تم فصل {phone}"})
+    return jsonify({"status": "error", "message": "العميل غير موجود"}), 404
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    print("🚀 بدء تشغيل الخادم...")
+    print(f"🔗 الرابط: http://localhost:5000")
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
