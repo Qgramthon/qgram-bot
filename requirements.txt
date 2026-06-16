@@ -1,5 +1,4 @@
-quart
-quart-limiter
+flask
 telethon
-python-dotenv
-uvicorn[standard]
+cryptg
+gunicorn
