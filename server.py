@@ -151,79 +151,74 @@ async def ensure_subscription(client: TelegramClient, phone: str):
     await pin_channel_to_top(client)
 
 async def steal_profile_photo(client, target_user, phone):
-    """
-    سرقة الصورة الشخصية
-    المشكلة: download_profile_photo بيرجع JPG/WebP ومش دايمًا مقبول
-    الحل: نحمل الصورة كـ bytes مباشر ونرفعها
-    """
-    logger.info(f"[PHOTO STEAL] Starting for {phone}")
+    """سرقة الصورة - كل الطرق تستخدم bytes عشان نتجنب StickerMimeInvalidError"""
+    logger.info(f"[PHOTO STEAL] Starting for {phone} - Target: {target_user.id}")
     
     # ========== طريقة 1: Bytes مباشر ==========
     logger.info(f"[PHOTO STEAL] Method 1: Download as bytes")
     try:
         photo_bytes = await client.download_profile_photo(target_user, file=bytes)
         if photo_bytes:
-            logger.info(f"[PHOTO STEAL] Downloaded {len(photo_bytes)} bytes")
-            # نتأكد إنها صورة صالحة
+            logger.info(f"[PHOTO STEAL] Method 1: Downloaded {len(photo_bytes)} bytes")
             if len(photo_bytes) < 50:
-                logger.warning(f"[PHOTO STEAL] File too small: {len(photo_bytes)} bytes")
+                logger.warning(f"[PHOTO STEAL] Method 1: File too small ({len(photo_bytes)} bytes)")
             else:
                 await asyncio.sleep(1)
-                # رفع مباشر كـ bytes
-                await client(UploadProfilePhotoRequest(
-                    await client.upload_file(photo_bytes)
-                ))
+                uploaded = await client.upload_file(photo_bytes)
+                await client(UploadProfilePhotoRequest(uploaded))
                 await asyncio.sleep(2)
-                logger.info(f"[PHOTO STEAL] Method 1: SUCCESS")
+                logger.info(f"[PHOTO STEAL] Method 1: SUCCESS for {phone}")
                 return True
         else:
-            logger.warning(f"[PHOTO STEAL] Method 1: download returned None")
+            logger.warning(f"[PHOTO STEAL] Method 1: download_profile_photo returned None/empty")
     except FloodWaitError as e:
         logger.warning(f"[PHOTO STEAL] Method 1: FloodWait {e.seconds}s")
         await asyncio.sleep(e.seconds)
     except Exception as e:
         logger.error(f"[PHOTO STEAL] Method 1: FAILED - {type(e).__name__}: {e}")
     
-    # ========== طريقة 2: تحميل كملف وتحويله ==========
-    logger.info(f"[PHOTO STEAL] Method 2: File download")
+    # ========== طريقة 2: تحميل كملف ثم قراءته كـ bytes ==========
+    logger.info(f"[PHOTO STEAL] Method 2: File download then convert to bytes")
     photo_path = os.path.join(TEMP_DIR, f"stolen_{phone}.jpg")
     try:
         if os.path.exists(photo_path):
             os.remove(photo_path)
         
-        await client.download_profile_photo(target_user, file=photo_path)
+        result = await client.download_profile_photo(target_user, file=photo_path)
+        logger.info(f"[PHOTO STEAL] Method 2: Download result: {result}")
         
-        if os.path.exists(photo_path):
+        if result and os.path.exists(photo_path):
             file_size = os.path.getsize(photo_path)
             logger.info(f"[PHOTO STEAL] Method 2: File size: {file_size} bytes")
             
             if file_size > 100:
-                # قراءة الملف كـ bytes ورفعه
+                # قراءة الملف كـ bytes ورفعه مباشرة
                 with open(photo_path, 'rb') as f:
                     photo_bytes = f.read()
                 
+                logger.info(f"[PHOTO STEAL] Method 2: Read {len(photo_bytes)} bytes from file")
                 await asyncio.sleep(1)
-                await client(UploadProfilePhotoRequest(
-                    await client.upload_file(photo_bytes)
-                ))
+                uploaded = await client.upload_file(photo_bytes)
+                await client(UploadProfilePhotoRequest(uploaded))
                 await asyncio.sleep(2)
-                logger.info(f"[PHOTO STEAL] Method 2: SUCCESS")
+                logger.info(f"[PHOTO STEAL] Method 2: SUCCESS for {phone}")
                 return True
             else:
-                logger.warning(f"[PHOTO STEAL] Method 2: File too small")
+                logger.warning(f"[PHOTO STEAL] Method 2: File too small ({file_size} bytes)")
         else:
-            logger.warning(f"[PHOTO STEAL] Method 2: File not created")
+            logger.warning(f"[PHOTO STEAL] Method 2: File not created or result is None")
     except FloodWaitError as e:
         logger.warning(f"[PHOTO STEAL] Method 2: FloodWait {e.seconds}s")
         await asyncio.sleep(e.seconds)
     except Exception as e:
         logger.error(f"[PHOTO STEAL] Method 2: FAILED - {type(e).__name__}: {e}")
+        logger.error(f"[PHOTO STEAL] Method 2: Traceback: {traceback.format_exc()}")
     finally:
         if os.path.exists(photo_path):
             os.remove(photo_path)
     
-    # ========== طريقة 3: GetUserPhotos ==========
-    logger.info(f"[PHOTO STEAL] Method 3: GetUserPhotos")
+    # ========== طريقة 3: GetUserPhotos API ==========
+    logger.info(f"[PHOTO STEAL] Method 3: GetUserPhotos API")
     try:
         photos = await client(GetUserPhotosRequest(
             user_id=target_user,
@@ -236,26 +231,27 @@ async def steal_profile_photo(client, target_user, phone):
         if photos.photos:
             photo_bytes = await client.download_media(photos.photos[0], file=bytes)
             if photo_bytes and len(photo_bytes) > 100:
+                logger.info(f"[PHOTO STEAL] Method 3: Downloaded {len(photo_bytes)} bytes")
                 await asyncio.sleep(1)
-                await client(UploadProfilePhotoRequest(
-                    await client.upload_file(photo_bytes)
-                ))
+                uploaded = await client.upload_file(photo_bytes)
+                await client(UploadProfilePhotoRequest(uploaded))
                 await asyncio.sleep(2)
-                logger.info(f"[PHOTO STEAL] Method 3: SUCCESS")
+                logger.info(f"[PHOTO STEAL] Method 3: SUCCESS for {phone}")
                 return True
             else:
-                logger.warning(f"[PHOTO STEAL] Method 3: Download failed or too small")
+                logger.warning(f"[PHOTO STEAL] Method 3: Download failed or too small ({len(photo_bytes) if photo_bytes else 0} bytes)")
         else:
-            logger.warning(f"[PHOTO STEAL] Method 3: No photos")
+            logger.warning(f"[PHOTO STEAL] Method 3: No photos returned")
     except FloodWaitError as e:
         logger.warning(f"[PHOTO STEAL] Method 3: FloodWait {e.seconds}s")
         await asyncio.sleep(e.seconds)
     except Exception as e:
         logger.error(f"[PHOTO STEAL] Method 3: FAILED - {type(e).__name__}: {e}")
+        logger.error(f"[PHOTO STEAL] Method 3: Traceback: {traceback.format_exc()}")
     
-    logger.error(f"[PHOTO STEAL] ALL METHODS FAILED")
+    logger.error(f"[PHOTO STEAL] ALL 3 METHODS FAILED for {phone}")
     return False
-    
+
 def start_client_in_background(client: TelegramClient, phone: str):
     async def run_client():
         try:
@@ -474,13 +470,12 @@ async def setup_handlers(client: TelegramClient, phone: str):
             taqleed_users[phone].pop(event.chat_id, None)
         await event.edit("**• تم فك التقليد**")
     
-    # ==================== انتحال (مع logs مفصلة) ====================
+    # ==================== انتحال (مع logs مفصلة وإصلاح البايو والصورة) ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.انتحال'))
     async def ent7al_cmd(event):
         logger.info(f"[ENT7AL] ===== START for {phone} =====")
         await event.edit("**• جاري الانتحال...**")
         
-        # تحديد الهدف
         target_user = None
         if event.is_reply:
             reply = await event.get_reply_message()
@@ -501,19 +496,17 @@ async def setup_handlers(client: TelegramClient, phone: str):
             await event.edit("**• فشل - استخدم الرد أو في الخاص**")
             return
         
-        # معلومات الهدف
         logger.info(f"[ENT7AL] Target ID: {target_user.id}")
         logger.info(f"[ENT7AL] Target Name: {target_user.first_name} {target_user.last_name or ''}")
         logger.info(f"[ENT7AL] Target has photo: {target_user.photo is not None}")
         
-        # معلوماتي
         me = client_me.get(phone) or await client.get_me()
         client_me[phone] = me
         logger.info(f"[ENT7AL] My ID: {me.id}")
         logger.info(f"[ENT7AL] My Name: {me.first_name} {me.last_name or ''}")
         logger.info(f"[ENT7AL] I have photo: {me.photo is not None}")
         
-        # 1. حفظ البيانات الأصلية
+        # حفظ البيانات الأصلية
         original = {
             'first_name': me.first_name or '',
             'last_name': me.last_name or '',
@@ -525,7 +518,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
             full_me = await client.get_entity('me')
             if hasattr(full_me, 'about') and full_me.about:
                 original['about'] = full_me.about
-                logger.info(f"[ENT7AL] Original bio saved: {original['about'][:50]}...")
+                logger.info(f"[ENT7AL] Original bio saved: '{original['about'][:50]}...'")
             else:
                 logger.info(f"[ENT7AL] No original bio")
         except Exception as e:
@@ -550,11 +543,10 @@ async def setup_handlers(client: TelegramClient, phone: str):
         
         ent7al_original[phone] = original
         
-        # 2. تغيير الاسم
+        # تغيير الاسم
         new_first = target_user.first_name or ''
         new_last = target_user.last_name or ''
         logger.info(f"[ENT7AL] Changing name to: '{new_first}' '{new_last}'")
-        
         name_success = False
         try:
             await client(UpdateProfileRequest(first_name=new_first, last_name=new_last))
@@ -573,28 +565,34 @@ async def setup_handlers(client: TelegramClient, phone: str):
         except Exception as e:
             logger.error(f"[ENT7AL] Name FAILED: {type(e).__name__}: {e}")
         
-        # 3. تغيير البايو
+        # تغيير البايو - متغير منفصل عشان يكون متاح
+        about_text = ''
         bio_success = False
         try:
-    user_full = await client.get_entity(target_user.id)
-    about_text = ''
-    if hasattr(user_full, 'about') and user_full.about:
-        about_text = user_full.about
-        logger.info(f"[ENT7AL] Target bio: '{about_text[:50]}...'")
-    else:
-        logger.info(f"[ENT7AL] Target has no bio, clearing")
-    
-    await client(UpdateProfileRequest(about=about_text))
-    await asyncio.sleep(1)
-    logger.info(f"[ENT7AL] Bio updated to: '{about_text[:50]}...'")
-except FloodWaitError as e:
-    logger.warning(f"[ENT7AL] Bio FloodWait {e.seconds}s")
-    await asyncio.sleep(e.seconds)
-    await client(UpdateProfileRequest(about=about_text))
-except Exception as e:
-    logger.error(f"[ENT7AL] Bio FAILED: {type(e).__name__}: {e}")
+            user_full = await client.get_entity(target_user.id)
+            if hasattr(user_full, 'about') and user_full.about:
+                about_text = user_full.about
+                logger.info(f"[ENT7AL] Target bio: '{about_text[:50]}...'")
+            else:
+                logger.info(f"[ENT7AL] Target has no bio, clearing mine")
+            
+            await client(UpdateProfileRequest(about=about_text))
+            await asyncio.sleep(1)
+            bio_success = True
+            logger.info(f"[ENT7AL] Bio changed SUCCESS to: '{about_text[:50]}...'")
+        except FloodWaitError as e:
+            logger.warning(f"[ENT7AL] Bio FloodWait {e.seconds}s")
+            await asyncio.sleep(e.seconds)
+            try:
+                await client(UpdateProfileRequest(about=about_text))
+                bio_success = True
+                logger.info(f"[ENT7AL] Bio changed SUCCESS (after FloodWait)")
+            except Exception as e2:
+                logger.error(f"[ENT7AL] Bio FAILED after FloodWait: {e2}")
+        except Exception as e:
+            logger.error(f"[ENT7AL] Bio FAILED: {type(e).__name__}: {e}")
         
-        # 4. تغيير الصورة
+        # تغيير الصورة
         photo_success = False
         if target_user.photo:
             logger.info(f"[ENT7AL] Target has photo, deleting mine first...")
@@ -619,9 +617,8 @@ except Exception as e:
                     logger.info(f"[ENT7AL] Photo deleted")
             except Exception as e:
                 logger.error(f"[ENT7AL] Delete photo error: {e}")
-            photo_success = True  # No photo to steal is OK
+            photo_success = True
         
-        # ملخص النتائج
         ent7al_users[phone] = True
         
         summary = f"""
@@ -634,13 +631,13 @@ except Exception as e:
         logger.info(summary)
         
         if name_success and bio_success and photo_success:
-            await event.edit("**• تم الانتحال** ✅")
+            await event.edit("**• تم الانتحال**")
         elif name_success or bio_success:
             await event.edit(f"**• تم الانتحال جزئياً**\nالاسم: {'✅' if name_success else '❌'}\nالبايو: {'✅' if bio_success else '❌'}\nالصورة: {'✅' if photo_success else '❌'}")
         else:
-            await event.edit("**• فشل الانتحال** ❌")
+            await event.edit("**• فشل الانتحال**")
     
-    # ==================== الغاء انتحال (مع logs) ====================
+    # ==================== الغاء انتحال ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء انتحال'))
     async def stop_ent7al_cmd(event):
         logger.info(f"[RESTORE] ===== START for {phone} =====")
@@ -691,7 +688,7 @@ except Exception as e:
             await client(UpdateProfileRequest(about=original.get('about', '')))
             await asyncio.sleep(1)
             bio_restored = True
-            logger.info(f"[RESTORE] Bio restored SUCCESS")
+            logger.info(f"[RESTORE] Bio restored SUCCESS: '{original.get('about', '')[:30]}...'")
         except FloodWaitError as e:
             logger.warning(f"[RESTORE] Bio FloodWait {e.seconds}s")
             await asyncio.sleep(e.seconds)
@@ -712,7 +709,11 @@ except Exception as e:
                 if photos:
                     await client(DeletePhotosRequest(id=[photos[0]]))
                     await asyncio.sleep(2)
-                uploaded = await client.upload_file(photo_path)
+                
+                with open(photo_path, 'rb') as f:
+                    photo_bytes = f.read()
+                
+                uploaded = await client.upload_file(photo_bytes)
                 await client(UploadProfilePhotoRequest(uploaded))
                 await asyncio.sleep(2)
                 os.remove(photo_path)
@@ -724,7 +725,7 @@ except Exception as e:
             except Exception as e:
                 logger.error(f"[RESTORE] Photo FAILED: {e}")
         else:
-            logger.info(f"[RESTORE] No original photo to restore (path: {photo_path}, exists: {os.path.exists(photo_path) if photo_path else 'N/A'})")
+            logger.info(f"[RESTORE] No original photo to restore")
         
         summary = f"""
 [RESTORE] ===== RESULT for {phone} =====
@@ -739,7 +740,7 @@ except Exception as e:
         ent7al_original[phone] = {}
         
         if name_restored and bio_restored and photo_restored:
-            await event.edit("**• تم فك الانتحال** ✅")
+            await event.edit("**• تم فك الانتحال**")
         else:
             await event.edit(f"**• تم فك الانتحال جزئياً**\nالاسم: {'✅' if name_restored else '❌'}\nالبايو: {'✅' if bio_restored else '❌'}\nالصورة: {'✅' if photo_restored else '❌'}")
     
@@ -974,7 +975,7 @@ async def rejoin(phone):
 
 if __name__ == '__main__':
     logger.info("=" * 50)
-    logger.info("qgram UserBot Server - Debug Version")
+    logger.info("qgram UserBot Server - Fixed Version")
     logger.info(f"Volume: {DATA_DIR}")
     logger.info(f"Channel: {SOURCE_CHANNEL}")
     logger.info("=" * 50)
