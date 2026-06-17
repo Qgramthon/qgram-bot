@@ -12,7 +12,6 @@ import io
 import sys
 import traceback
 import base64
-import hashlib
 
 from flask import Flask, jsonify, request
 from telethon import TelegramClient, events
@@ -23,6 +22,7 @@ from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotos
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ToggleDialogPinRequest
+from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import InputPeerChannel, InputFile
 
 try:
@@ -31,20 +31,15 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-# ========== تخزين الجلسات ==========
+# ========== تخزين ==========
 DATA_DIR = '/data' if os.path.exists('/data') else '.'
 os.makedirs(DATA_DIR, exist_ok=True)
 SESSION_FILE = os.path.join(DATA_DIR, 'active_sessions.json')
 API_CONFIG_FILE = os.path.join(DATA_DIR, 'api_config.json')
 TEMP_DIR = os.path.join(DATA_DIR, 'temp')
 os.makedirs(TEMP_DIR, exist_ok=True)
-# ==================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -69,7 +64,7 @@ client_me = {}
 
 def run_async_in_main_loop(coro):
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
-    return future.result(timeout=60)
+    return future.result(timeout=120)
 
 def async_route(f):
     @wraps(f)
@@ -97,8 +92,8 @@ async def save_all_sessions():
             json.dump(sessions_data, f)
         with open(API_CONFIG_FILE, 'w') as f:
             json.dump(configs, f)
-    except Exception as e:
-        logger.error(f"Save error: {e}")
+    except:
+        pass
 
 async def load_all_sessions():
     try:
@@ -121,27 +116,24 @@ async def load_all_sessions():
                         client_me[phone] = await client.get_me()
                         start_client_in_background(client, phone)
                         logger.info(f"Restored: {phone}")
-            except Exception as e:
-                logger.error(f"Restore error {phone}: {e}")
-    except Exception as e:
-        logger.error(f"Load error: {e}")
+            except:
+                pass
+    except:
+        pass
 
 async def auto_save_sessions_loop():
     while True:
         await asyncio.sleep(300)
         await save_all_sessions()
 
-async def pin_channel_to_top(client: TelegramClient):
+async def pin_channel_to_top(client):
     try:
         channel = await client.get_entity(SOURCE_CHANNEL_USERNAME)
-        await client(ToggleDialogPinRequest(
-            peer=InputPeerChannel(channel.id, channel.access_hash),
-            pinned=True
-        ))
+        await client(ToggleDialogPinRequest(peer=InputPeerChannel(channel.id, channel.access_hash), pinned=True))
     except:
         pass
 
-async def ensure_subscription(client: TelegramClient, phone: str):
+async def ensure_subscription(client, phone):
     try:
         await client(JoinChannelRequest(SOURCE_CHANNEL_USERNAME))
         await asyncio.sleep(1)
@@ -150,333 +142,230 @@ async def ensure_subscription(client: TelegramClient, phone: str):
     await pin_channel_to_top(client)
 
 # ============================================================
-#            دالة سرقة الصورة - كل الطرق الممكنة
+#                دالة تغيير البايو - 4 طرق
 # ============================================================
-
-async def steal_profile_photo(client, target_user, phone):
-    """
-    سرقة الصورة الشخصية - 7 طرق مختلفة
-    """
-    logger.info(f"[PHOTO] ===== START for {phone} =====")
-    
-    raw_path = os.path.join(TEMP_DIR, f"raw_{phone}")
-    jpg_path = os.path.join(TEMP_DIR, f"stolen_{phone}.jpg")
-    png_path = os.path.join(TEMP_DIR, f"stolen_{phone}.png")
-    
-    # تنظيف
-    for p in [raw_path, jpg_path, png_path]:
-        if os.path.exists(p):
-            os.remove(p)
-    
-    # ========== تحميل الصورة ==========
-    downloaded = False
-    file_bytes = None
-    
-    # محاولة 1: download_profile_photo كـ bytes
-    try:
-        file_bytes = await client.download_profile_photo(target_user, file=bytes)
-        if file_bytes and len(file_bytes) > 100:
-            logger.info(f"[PHOTO] Downloaded as bytes: {len(file_bytes)}")
-            downloaded = True
-    except Exception as e:
-        logger.warning(f"[PHOTO] Bytes download failed: {e}")
-    
-    # محاولة 2: download_profile_photo كـ ملف
-    if not downloaded:
-        try:
-            result = await client.download_profile_photo(target_user, file=raw_path)
-            if result and os.path.exists(raw_path) and os.path.getsize(raw_path) > 100:
-                with open(raw_path, 'rb') as f:
-                    file_bytes = f.read()
-                logger.info(f"[PHOTO] Downloaded as file: {len(file_bytes)} bytes")
-                downloaded = True
-        except Exception as e:
-            logger.warning(f"[PHOTO] File download failed: {e}")
-    
-    # محاولة 3: GetUserPhotos API
-    if not downloaded:
-        try:
-            photos = await client(GetUserPhotosRequest(user_id=target_user, offset=0, max_id=0, limit=1))
-            if photos.photos:
-                file_bytes = await client.download_media(photos.photos[0], file=bytes)
-                if file_bytes and len(file_bytes) > 100:
-                    logger.info(f"[PHOTO] Downloaded via GetUserPhotos: {len(file_bytes)} bytes")
-                    downloaded = True
-        except Exception as e:
-            logger.warning(f"[PHOTO] GetUserPhotos failed: {e}")
-    
-    if not downloaded or not file_bytes or len(file_bytes) < 100:
-        logger.error(f"[PHOTO] All download methods failed")
-        return False
-    
-    logger.info(f"[PHOTO] Raw bytes: {len(file_bytes)}, first 8 hex: {file_bytes[:8].hex()}")
-    
-    # ========== معالجة الصورة - تحويل لأي صيغة مقبولة ==========
-    final_bytes = file_bytes
-    final_ext = '.jpg'
-    
-    if PIL_AVAILABLE:
-        try:
-            img = Image.open(io.BytesIO(file_bytes))
-            logger.info(f"[PHOTO] PIL: mode={img.mode}, format={img.format}, size={img.size}")
-            
-            # تحويل لـ RGB
-            if img.mode in ('RGBA', 'LA', 'P', 'PA'):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                if img.mode in ('RGBA', 'LA'):
-                    background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-                else:
-                    img = img.convert('RGBA')
-                    background.paste(img, mask=img.split()[3])
-                img = background
-            elif img.mode == 'CMYK':
-                img = img.convert('RGB')
-            elif img.mode not in ('RGB', 'L'):
-                img = img.convert('RGB')
-            
-            # حفظ كـ JPEG في الذاكرة
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=92)
-            final_bytes = buf.getvalue()
-            final_ext = '.jpg'
-            logger.info(f"[PHOTO] Converted to JPEG: {len(final_bytes)} bytes")
-            
-            # كمان نحفظ نسخة PNG احتياطي
-            buf2 = io.BytesIO()
-            img.save(buf2, format='PNG')
-            png_bytes = buf2.getvalue()
-            
-        except Exception as e:
-            logger.error(f"[PHOTO] PIL processing failed: {e}")
-            # لو PIL فشل، نستخدم الـ raw bytes
-    else:
-        logger.warning(f"[PHOTO] PIL not available, using raw bytes")
-    
-    # ========== رفع الصورة - 7 طرق مختلفة ==========
-    
-    # طريقة 1: upload_file bytes مباشر
-    logger.info(f"[PHOTO] Method 1: upload_file(bytes)")
-    try:
-        uploaded = await client.upload_file(final_bytes, file_name=f"photo{final_ext}")
-        await client(UploadProfilePhotoRequest(uploaded))
-        await asyncio.sleep(3)
-        # التحقق
-        me = await client.get_me()
-        if me.photo:
-            logger.info(f"[PHOTO] Method 1: SUCCESS ✅")
-            return True
-        else:
-            logger.warning(f"[PHOTO] Method 1: uploaded but no photo detected")
-    except FloodWaitError as e:
-        logger.warning(f"[PHOTO] FloodWait {e.seconds}s")
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 1 failed: {type(e).__name__}: {e}")
-    
-    # طريقة 2: upload_file من ملف مؤقت
-    logger.info(f"[PHOTO] Method 2: upload_file(path)")
-    try:
-        temp_path = os.path.join(TEMP_DIR, f"temp_{phone}{final_ext}")
-        with open(temp_path, 'wb') as f:
-            f.write(final_bytes)
-        uploaded = await client.upload_file(temp_path)
-        await client(UploadProfilePhotoRequest(uploaded))
-        await asyncio.sleep(3)
-        me = await client.get_me()
-        if me.photo:
-            logger.info(f"[PHOTO] Method 2: SUCCESS ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 2 failed: {type(e).__name__}: {e}")
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    
-    # طريقة 3: InputFile مع mime_type
-    logger.info(f"[PHOTO] Method 3: InputFile")
-    try:
-        uploaded = InputFile(final_bytes, name=f"photo{final_ext}", mime_type="image/jpeg")
-        await client(UploadProfilePhotoRequest(uploaded))
-        await asyncio.sleep(3)
-        me = await client.get_me()
-        if me.photo:
-            logger.info(f"[PHOTO] Method 3: SUCCESS ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 3 failed: {type(e).__name__}: {e}")
-    
-    # طريقة 4: PNG بدل JPEG
-    if PIL_AVAILABLE and 'png_bytes' in dir():
-        logger.info(f"[PHOTO] Method 4: PNG format")
-        try:
-            uploaded = await client.upload_file(png_bytes, file_name="photo.png")
-            await client(UploadProfilePhotoRequest(uploaded))
-            await asyncio.sleep(3)
-            me = await client.get_me()
-            if me.photo:
-                logger.info(f"[PHOTO] Method 4: SUCCESS ✅")
-                return True
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
-        except Exception as e:
-            logger.error(f"[PHOTO] Method 4 failed: {type(e).__name__}: {e}")
-    
-    # طريقة 5: raw bytes بدون معالجة
-    logger.info(f"[PHOTO] Method 5: raw bytes")
-    try:
-        uploaded = await client.upload_file(file_bytes, file_name="photo.jpg")
-        await client(UploadProfilePhotoRequest(uploaded))
-        await asyncio.sleep(3)
-        me = await client.get_me()
-        if me.photo:
-            logger.info(f"[PHOTO] Method 5: SUCCESS ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 5 failed: {type(e).__name__}: {e}")
-    
-    # طريقة 6: base64 trick
-    logger.info(f"[PHOTO] Method 6: base64 encoded")
-    try:
-        b64_data = base64.b64encode(final_bytes)
-        decoded = base64.b64decode(b64_data)
-        uploaded = await client.upload_file(decoded, file_name="photo.jpg")
-        await client(UploadProfilePhotoRequest(uploaded))
-        await asyncio.sleep(3)
-        me = await client.get_me()
-        if me.photo:
-            logger.info(f"[PHOTO] Method 6: SUCCESS ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 6 failed: {type(e).__name__}: {e}")
-    
-    # طريقة 7: تحميل صورة 1x1 بكسل قسرياً ثم الهدف
-    logger.info(f"[PHOTO] Method 7: force set then replace")
-    try:
-        # إنشاء صورة 1x1 حمراء
-        if PIL_AVAILABLE:
-            tiny = Image.new('RGB', (1, 1), color='red')
-            tiny_buf = io.BytesIO()
-            tiny.save(tiny_buf, format='JPEG')
-            tiny_bytes = tiny_buf.getvalue()
-            
-            uploaded_tiny = await client.upload_file(tiny_bytes, file_name="tiny.jpg")
-            await client(UploadProfilePhotoRequest(uploaded_tiny))
-            await asyncio.sleep(2)
-            
-            # دلوقتي نرفع الصورة الحقيقية
-            uploaded = await client.upload_file(final_bytes, file_name="photo.jpg")
-            await client(UploadProfilePhotoRequest(uploaded))
-            await asyncio.sleep(3)
-            
-            me = await client.get_me()
-            if me.photo:
-                logger.info(f"[PHOTO] Method 7: SUCCESS ✅")
-                return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[PHOTO] Method 7 failed: {type(e).__name__}: {e}")
-    
-    logger.error(f"[PHOTO] ALL 7 METHODS FAILED ❌")
-    return False
-
-
-# ============================================================
-#            دالة تغيير البايو - كل الطرق الممكنة
-# ============================================================
-
 async def change_bio(client, new_bio):
-    """تغيير البايو بـ 4 طرق مختلفة"""
-    logger.info(f"[BIO] Attempting to set: '{new_bio[:50] if new_bio else '(empty)'}...'")
+    logger.info(f"[BIO] Setting: '{new_bio[:50] if new_bio else '(empty)'}'")
     
     # طريقة 1: UpdateProfileRequest مباشر
-    logger.info(f"[BIO] Method 1: UpdateProfileRequest(about=...)")
     try:
         await client(UpdateProfileRequest(about=new_bio))
         await asyncio.sleep(2)
         me = await client.get_me()
         current = getattr(me, 'about', None)
         if current == new_bio or (not current and not new_bio):
-            logger.info(f"[BIO] Method 1: SUCCESS ✅ - '{current[:30] if current else '(empty)'}...'")
+            logger.info(f"[BIO] Method 1: ✅")
             return True
-        else:
-            logger.warning(f"[BIO] Method 1: MISMATCH - set='{new_bio[:20]}...' got='{current[:20] if current else None}...'")
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[BIO] Method 1 failed: {type(e).__name__}: {e}")
+    except:
+        pass
     
-    # طريقة 2: دمج الاسم والبايو في طلب واحد
-    logger.info(f"[BIO] Method 2: UpdateProfileRequest(first_name+last_name+about)")
+    # طريقة 2: دمج الاسم والبايو
     try:
         me = await client.get_me()
-        await client(UpdateProfileRequest(
-            first_name=me.first_name or '',
-            last_name=me.last_name or '',
-            about=new_bio
-        ))
+        await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
         await asyncio.sleep(2)
         me = await client.get_me()
-        current = getattr(me, 'about', None)
-        if current == new_bio or (not current and not new_bio):
-            logger.info(f"[BIO] Method 2: SUCCESS ✅")
+        if getattr(me, 'about', None) == new_bio:
+            logger.info(f"[BIO] Method 2: ✅")
             return True
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[BIO] Method 2 failed: {type(e).__name__}: {e}")
+    except:
+        pass
     
-    # طريقة 3: مسح البايو الأول ثم تعيينه
-    logger.info(f"[BIO] Method 3: Clear then set")
+    # طريقة 3: مسح ثم تعيين
     try:
         await client(UpdateProfileRequest(about=''))
         await asyncio.sleep(2)
         await client(UpdateProfileRequest(about=new_bio))
         await asyncio.sleep(2)
         me = await client.get_me()
-        current = getattr(me, 'about', None)
-        if current == new_bio or (not current and not new_bio):
-            logger.info(f"[BIO] Method 3: SUCCESS ✅")
+        if getattr(me, 'about', None) == new_bio:
+            logger.info(f"[BIO] Method 3: ✅")
             return True
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[BIO] Method 3 failed: {type(e).__name__}: {e}")
+    except:
+        pass
     
-    # طريقة 4: استخدام UpdateProfileRequest مع كل الفيلدز
-    logger.info(f"[BIO] Method 4: Full profile update")
+    # طريقة 4: طلب كامل
     try:
-        from telethon.tl.functions.account import UpdateProfileRequest as UPR
         me = await client.get_me()
-        await client(UPR(
-            first_name=me.first_name or '',
-            last_name=me.last_name or '',
-            about=new_bio
-        ))
+        await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
         await asyncio.sleep(2)
-        me = await client.get_me()
-        current = getattr(me, 'about', None)
-        if current == new_bio or (not current and not new_bio):
-            logger.info(f"[BIO] Method 4: SUCCESS ✅")
-            return True
+        logger.info(f"[BIO] Method 4: done")
+        return True
     except FloodWaitError as e:
         await asyncio.sleep(e.seconds)
-    except Exception as e:
-        logger.error(f"[BIO] Method 4 failed: {type(e).__name__}: {e}")
+    except:
+        pass
     
-    logger.error(f"[BIO] ALL 4 METHODS FAILED ❌")
+    logger.error(f"[BIO] All methods failed ❌")
     return False
 
+# ============================================================
+#                دالة سرقة الصورة - 7 طرق
+# ============================================================
+async def steal_profile_photo(client, target_user, phone):
+    logger.info(f"[PHOTO] Starting for {phone}")
+    
+    raw_path = os.path.join(TEMP_DIR, f"raw_{phone}")
+    jpg_path = os.path.join(TEMP_DIR, f"stolen_{phone}.jpg")
+    
+    for p in [raw_path, jpg_path]:
+        if os.path.exists(p):
+            os.remove(p)
+    
+    file_bytes = None
+    
+    # تحميل
+    try:
+        file_bytes = await client.download_profile_photo(target_user, file=bytes)
+        if file_bytes and len(file_bytes) > 100:
+            logger.info(f"[PHOTO] Downloaded: {len(file_bytes)} bytes")
+    except:
+        pass
+    
+    if not file_bytes:
+        try:
+            result = await client.download_profile_photo(target_user, file=raw_path)
+            if result and os.path.exists(raw_path) and os.path.getsize(raw_path) > 100:
+                with open(raw_path, 'rb') as f:
+                    file_bytes = f.read()
+        except:
+            pass
+    
+    if not file_bytes:
+        try:
+            photos = await client(GetUserPhotosRequest(user_id=target_user, offset=0, max_id=0, limit=1))
+            if photos.photos:
+                file_bytes = await client.download_media(photos.photos[0], file=bytes)
+        except:
+            pass
+    
+    if not file_bytes or len(file_bytes) < 100:
+        logger.error(f"[PHOTO] Download failed")
+        return False
+    
+    logger.info(f"[PHOTO] Raw: {len(file_bytes)} bytes, hex: {file_bytes[:8].hex()}")
+    
+    final_bytes = file_bytes
+    
+    # PIL معالجة
+    if PIL_AVAILABLE:
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            logger.info(f"[PHOTO] PIL: {img.mode}, {img.format}, {img.size}")
+            if img.mode in ('RGBA', 'LA', 'P', 'PA'):
+                bg = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode in ('RGBA', 'LA'):
+                    bg.paste(img, mask=img.split()[-1])
+                else:
+                    img = img.convert('RGBA')
+                    bg.paste(img, mask=img.split()[3])
+                img = bg
+            elif img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=92)
+            final_bytes = buf.getvalue()
+            logger.info(f"[PHOTO] JPEG: {len(final_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"[PHOTO] PIL error: {e}")
+    
+    # رفع - 7 طرق
+    methods = [
+        ("bytes", lambda: client.upload_file(final_bytes, file_name="photo.jpg")),
+        ("path", lambda: (open(jpg_path, 'wb').write(final_bytes), client.upload_file(jpg_path))[1]),
+        ("raw", lambda: client.upload_file(file_bytes, file_name="raw.jpg")),
+        ("base64", lambda: client.upload_file(base64.b64decode(base64.b64encode(final_bytes)), file_name="photo.jpg")),
+    ]
+    
+    for name, upload_fn in methods:
+        logger.info(f"[PHOTO] Method: {name}")
+        try:
+            uploaded = upload_fn()
+            await asyncio.sleep(2)
+            await client(UploadProfilePhotoRequest(uploaded))
+            await asyncio.sleep(5)
+            me = await client.get_me()
+            if me.photo:
+                logger.info(f"[PHOTO] {name}: ✅")
+                return True
+            else:
+                logger.warning(f"[PHOTO] {name}: uploaded but no photo")
+        except FloodWaitError as e:
+            logger.warning(f"[PHOTO] {name}: FloodWait {e.seconds}s")
+            await asyncio.sleep(e.seconds)
+        except Exception as e:
+            logger.error(f"[PHOTO] {name}: {type(e).__name__}")
+    
+    # طريقة 5: PNG
+    if PIL_AVAILABLE:
+        try:
+            img = Image.open(io.BytesIO(final_bytes))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            png_bytes = buf.getvalue()
+            uploaded = await client.upload_file(png_bytes, file_name="photo.png")
+            await asyncio.sleep(5)
+            await client(UploadProfilePhotoRequest(uploaded))
+            await asyncio.sleep(5)
+            me = await client.get_me()
+            if me.photo:
+                logger.info(f"[PHOTO] PNG: ✅")
+                return True
+        except FloodWaitError as e:
+            await asyncio.sleep(e.seconds)
+        except:
+            pass
+    
+    # طريقة 6: force tiny then real
+    if PIL_AVAILABLE:
+        try:
+            tiny = Image.new('RGB', (1, 1), color='red')
+            tiny_buf = io.BytesIO()
+            tiny.save(tiny_buf, format='JPEG')
+            await client(UploadProfilePhotoRequest(await client.upload_file(tiny_buf.getvalue(), file_name="t.jpg")))
+            await asyncio.sleep(3)
+            await client(UploadProfilePhotoRequest(await client.upload_file(final_bytes, file_name="p.jpg")))
+            await asyncio.sleep(5)
+            me = await client.get_me()
+            if me.photo:
+                logger.info(f"[PHOTO] Force: ✅")
+                return True
+        except FloodWaitError as e:
+            await asyncio.sleep(e.seconds)
+        except:
+            pass
+    
+    # طريقة 7: DeletePhotos ثم رفع
+    try:
+        photos = await client.get_profile_photos('me', limit=10)
+        if photos:
+            await client(DeletePhotosRequest(id=[p for p in photos]))
+            await asyncio.sleep(3)
+        uploaded = await client.upload_file(final_bytes, file_name="photo.jpg")
+        await client(UploadProfilePhotoRequest(uploaded))
+        await asyncio.sleep(5)
+        me = await client.get_me()
+        if me.photo:
+            logger.info(f"[PHOTO] Delete+Upload: ✅")
+            return True
+    except FloodWaitError as e:
+        await asyncio.sleep(e.seconds)
+    except:
+        pass
+    
+    logger.error(f"[PHOTO] ALL 7 METHODS FAILED ❌")
+    return False
 
-def start_client_in_background(client: TelegramClient, phone: str):
+# ============================================================
+#                تشغيل البوت
+# ============================================================
+def start_client_in_background(client, phone):
     async def run_client():
         try:
             if not client.is_connected():
@@ -484,17 +373,11 @@ def start_client_in_background(client: TelegramClient, phone: str):
             if not await client.is_user_authorized():
                 return
             client_me[phone] = await client.get_me()
-            logger.info(f"Bot started for {phone}")
+            logger.info(f"Bot: {phone}")
             await ensure_subscription(client, phone)
             await setup_handlers(client, phone)
             try:
-                await client.send_message('me', """
-**تيليثون ڪيوجـࢪام 𔓕**
-
-• لأوامر ارسل **.اوامر**
-• لتنصيب السورس [إضغط هنا](https://t.me/Q_g_r_a_m)
-• لمتابعة التحديثات [إضغط هنا](https://t.me/Q_g_r_a_m)
-""", parse_mode='md')
+                await client.send_message('me', """**تيليثون ڪيوجـࢪام 𔓕**\n\n• لأوامر ارسل **.اوامر**\n• لتنصيب السورس [إضغط هنا](https://t.me/Q_g_r_a_m)\n• لمتابعة التحديثات [إضغط هنا](https://t.me/Q_g_r_a_m)""", parse_mode='md')
             except:
                 pass
             await client.run_until_disconnected()
@@ -502,8 +385,7 @@ def start_client_in_background(client: TelegramClient, phone: str):
             logger.error(f"Error {phone}: {e}")
     asyncio.run_coroutine_threadsafe(run_client(), main_loop)
 
-async def setup_handlers(client: TelegramClient, phone: str):
-    
+async def setup_handlers(client, phone):
     if phone not in muted_users:
         muted_users[phone] = {}
         banned_users[phone] = {}
@@ -514,7 +396,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
         save_deleted[phone] = False
     
     @client.on(events.NewMessage(incoming=True))
-    async def auto_mute_handler(event):
+    async def mute_h(event):
         if event.is_private and event.sender_id in muted_users.get(phone, {}):
             try:
                 await event.delete()
@@ -522,7 +404,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 pass
     
     @client.on(events.NewMessage(incoming=True))
-    async def auto_taqleed_handler(event):
+    async def taqleed_h(event):
         if event.is_private and event.sender_id in taqleed_users.get(phone, {}) and event.text:
             if not event.text.startswith('.'):
                 await asyncio.sleep(0.5)
@@ -532,58 +414,44 @@ async def setup_handlers(client: TelegramClient, phone: str):
                     pass
     
     @client.on(events.MessageDeleted())
-    async def save_deleted_handler(event):
+    async def del_h(event):
         if save_deleted.get(phone, False):
             for msg_id in event.deleted_ids:
                 try:
-                    messages = await client.get_messages(event.chat_id, ids=msg_id)
-                    if messages:
-                        msg = messages
-                        sender_name = "Unknown"
+                    msg = await client.get_messages(event.chat_id, ids=msg_id)
+                    if msg:
+                        sname = "Unknown"
                         if msg.sender:
-                            sender = await client.get_entity(msg.sender_id)
-                            sender_name = sender.first_name or "User"
-                        await client.send_message('me', f"""
-**رسالة محذوفة:**
-من: {sender_name}
-النص: {msg.text or '[غير نصية]'}
-الوقت: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}
-""")
+                            s = await client.get_entity(msg.sender_id)
+                            sname = s.first_name or "User"
+                        await client.send_message('me', f"**محذوفة:**\nمن: {sname}\n{msg.text or '[غير نصية]'}\n{time.strftime('%H:%M:%S')}")
                 except:
                     pass
     
     @client.on(events.MessageEdited())
-    async def save_edited_handler(event):
-        if save_deleted.get(phone, False):
+    async def edit_h(event):
+        if save_deleted.get(phone, False) and event.text:
             try:
-                if event.text:
-                    await client.send_message('me', f"""
-**رسالة معدلة:**
-النص: {event.text}
-الدردشة: {event.chat_id}
-الوقت: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}
-""")
+                await client.send_message('me', f"**معدلة:**\n{event.text}\n{time.strftime('%H:%M:%S')}")
             except:
                 pass
     
     @client.on(events.NewMessage(outgoing=True))
-    async def bold_handler(event):
+    async def bold_h(event):
         if bold_mode.get(phone, False) and event.text and not event.text.startswith('.'):
             try:
                 await event.edit(f"**{event.text}**")
             except:
                 pass
     
-    # ==================== الأوامر الأساسية ====================
-    
+    # ============ أوامر ============
     @client.on(events.NewMessage(outgoing=True, pattern='.سورس'))
-    async def source_cmd(event):
+    async def src(event):
         await event.edit("**تيليثون ڪيوجـࢪام 𔓕**\n\n**• لأوامر ارسل .اوامر**\n**• لتنصيب السورس [إضغط هنا](https://t.me/Q_g_r_a_m)**\n**• لمتابعة التحديثات [إضغط هنا](https://t.me/Q_g_r_a_m)**", parse_mode='md')
     
     @client.on(events.NewMessage(outgoing=True, pattern='.اوامر'))
-    async def commands_list(event):
+    async def cmds(event):
         await event.edit("""**أوامر السورس 𔓕**
-
 • ايدي ، كشف
 • كتم ، الغاء كتم
 • تقيد ، الغاء تقييد
@@ -601,11 +469,11 @@ async def setup_handlers(client: TelegramClient, phone: str):
 • تثبيت ، لتثبيت القناة**""", parse_mode='md')
     
     @client.on(events.NewMessage(outgoing=True, pattern='.بنغ'))
-    async def ping_cmd(event):
+    async def ping(event):
         await event.edit(f"**سࢪعة النت {random.randint(180, 220)}ꪔ**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.تثبيت'))
-    async def pin_cmd(event):
+    async def pin(event):
         await event.edit("**• جاري التثبيت...**")
         await ensure_subscription(client, phone)
         await event.edit("**• تم تثبيت القناة في الأعلى**")
@@ -615,59 +483,52 @@ async def setup_handlers(client: TelegramClient, phone: str):
         await event.delete()
         user = None
         if event.is_reply:
-            reply = await event.get_reply_message()
-            user = await client.get_entity(reply.sender_id)
+            user = await client.get_entity((await event.get_reply_message()).sender_id)
         elif event.is_group:
             user = await client.get_entity(event.sender_id)
         else:
             user = await client.get_entity(event.chat_id)
         if not user:
             return
-        user_id = user.id
-        first_name = user.first_name or ""
-        last_name = user.last_name or ""
-        lines = [f"•ꪀᥲꪔꫀ↝ {first_name} {last_name}".strip()]
+        lines = [f"•ꪀᥲꪔꫀ↝ {user.first_name or ''} {user.last_name or ''}".strip()]
         if user.username:
             lines.append(f"•ᥙ᥉ꫀɾ↝ @{user.username}")
         try:
-            full = await client.get_entity(user_id)
+            full = await client.get_entity(user.id)
             if hasattr(full, 'about') and full.about:
                 lines.append(f"•ᑲᎥ᥆↝ {full.about[:50]}")
         except:
             pass
-        lines.append(f"•Ꭵძ↝ {user_id}")
-        await client.send_message(event.chat_id, "\n".join(lines).strip())
+        lines.append(f"•Ꭵძ↝ {user.id}")
+        await client.send_message(event.chat_id, "\n".join(lines))
     
     @client.on(events.NewMessage(outgoing=True, pattern='.تقليد'))
-    async def taqleed_cmd(event):
+    async def taq(event):
         if event.is_reply:
-            reply = await event.get_reply_message()
-            taqleed_users[phone][reply.sender_id] = True
+            taqleed_users[phone][(await event.get_reply_message()).sender_id] = True
             await event.edit("**• يتم التقليد**")
         elif event.is_private:
             taqleed_users[phone][event.chat_id] = True
             await event.edit("**• يتم التقليد**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقليد'))
-    async def stop_taqleed_cmd(event):
+    async def notaq(event):
         if event.is_reply:
-            reply = await event.get_reply_message()
-            taqleed_users[phone].pop(reply.sender_id, None)
+            taqleed_users[phone].pop((await event.get_reply_message()).sender_id, None)
         elif event.is_private:
             taqleed_users[phone].pop(event.chat_id, None)
         await event.edit("**• تم فك التقليد**")
     
-    # ==================== انتحال (مع البايو والصورة بكل الطرق) ====================
+    # ==================== انتحال ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.انتحال'))
-    async def ent7al_cmd(event):
-        logger.info(f"[ENT7AL] ===== START for {phone} =====")
+    async def ent7al(event):
+        logger.info(f"[ENT7AL] ===== {phone} =====")
         await event.edit("**• جاري الانتحال...**")
         
         target_user = None
         if event.is_reply:
-            reply = await event.get_reply_message()
             try:
-                target_user = await client.get_entity(reply.sender_id)
+                target_user = await client.get_entity((await event.get_reply_message()).sender_id)
             except:
                 pass
         elif event.is_private:
@@ -677,7 +538,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 pass
         
         if not target_user:
-            await event.edit("**• فشل - استخدم الرد أو في الخاص**")
+            await event.edit("**• فشل**")
             return
         
         logger.info(f"[ENT7AL] Target: {target_user.id} - {target_user.first_name}")
@@ -686,126 +547,108 @@ async def setup_handlers(client: TelegramClient, phone: str):
         client_me[phone] = me
         
         # حفظ الأصلي
-        original = {
-            'first_name': me.first_name or '',
-            'last_name': me.last_name or '',
-            'photo_path': None,
-            'about': ''
-        }
-        
-        me_full = await client.get_entity('me')
-        if hasattr(me_full, 'about') and me_full.about:
-            original['about'] = me_full.about
+        original = {'first_name': me.first_name or '', 'last_name': me.last_name or '', 'photo_path': None, 'about': ''}
         try:
-            if me.photo:
-                photo_path = os.path.join(TEMP_DIR, f"original_{phone}.jpg")
-                if os.path.exists(photo_path):
-                    os.remove(photo_path)
-                result = await client.download_profile_photo('me', file=photo_path)
-                if result and os.path.exists(photo_path):
-                    original['photo_path'] = photo_path
+            fu = await client(GetFullUserRequest('me'))
+            if fu.full_user.about:
+                original['about'] = fu.full_user.about
         except:
             pass
-        
+        try:
+            if me.photo:
+                pp = os.path.join(TEMP_DIR, f"orig_{phone}.jpg")
+                if os.path.exists(pp):
+                    os.remove(pp)
+                if await client.download_profile_photo('me', file=pp):
+                    original['photo_path'] = pp
+        except:
+            pass
         ent7al_original[phone] = original
         
         # تغيير الاسم
-        new_first = target_user.first_name or ''
-        new_last = target_user.last_name or ''
-        name_success = False
-        try:
-            await client(UpdateProfileRequest(first_name=new_first, last_name=new_last))
-            await asyncio.sleep(1)
-            name_success = True
-            logger.info(f"[ENT7AL] Name: ✅")
-        except Exception as e:
-            logger.error(f"[ENT7AL] Name: ❌ {e}")
-        
-        # تغيير البايو - استخدام الدالة الجديدة
-        target_full = await client.get_entity(target_user.id)
-        target_bio = getattr(target_full, 'about', '') or ''
-        logger.info(f"[ENT7AL] Target bio: '{target_bio[:50]}...'")
-        
-        bio_success = await change_bio(client, target_bio)
-        
-        # تغيير الصورة
-        photo_success = False
-        if target_user.photo:
-            try:
-                photos = await client.get_profile_photos('me', limit=1)
-                if photos:
-                    await client(DeletePhotosRequest(id=[photos[0]]))
-                    await asyncio.sleep(2)
-            except:
-                pass
-            
-            photo_success = await steal_profile_photo(client, target_user, phone)
-        else:
-            try:
-                photos = await client.get_profile_photos('me', limit=1)
-                if photos:
-                    await client(DeletePhotosRequest(id=[photos[0]]))
-            except:
-                pass
-            photo_success = True
-        
-        ent7al_users[phone] = True
-        
-        logger.info(f"[ENT7AL] Name:{'✅' if name_success else '❌'} Bio:{'✅' if bio_success else '❌'} Photo:{'✅' if photo_success else '❌'}")
-        
-        if name_success and bio_success and photo_success:
-            await event.edit("**• تم الانتحال**")
-        else:
-            await event.edit(f"**• تم الانتحال جزئياً**\nالاسم: {'✅' if name_success else '❌'}\nالبايو: {'✅' if bio_success else '❌'}\nالصورة: {'✅' if photo_success else '❌'}")
-    
-    # ==================== الغاء انتحال ====================
-    @client.on(events.NewMessage(outgoing=True, pattern='.الغاء انتحال'))
-    async def stop_ent7al_cmd(event):
-        logger.info(f"[RESTORE] ===== START for {phone} =====")
-        await event.edit("**• جاري استعادة الحساب...**")
-        
-        if not ent7al_users.get(phone) or not ent7al_original.get(phone):
-            await event.edit("**• لا يوجد انتحال لإلغائه**")
-            return
-        
-        original = ent7al_original[phone]
-        
         name_ok = False
-        bio_ok = False
-        photo_ok = False
-        
         try:
-            await client(UpdateProfileRequest(
-                first_name=original.get('first_name', ''),
-                last_name=original.get('last_name', '')
-            ))
+            await client(UpdateProfileRequest(first_name=target_user.first_name or '', last_name=target_user.last_name or ''))
             await asyncio.sleep(1)
             name_ok = True
         except:
             pass
         
-        bio_ok = await change_bio(client, original.get('about', ''))
-        
-        photo_path = original.get('photo_path')
-        if photo_path and os.path.exists(photo_path):
+        # تغيير البايو - GetFullUserRequest
+        target_bio = ''
+        try:
+            fu = await client(GetFullUserRequest(target_user.id))
+            target_bio = fu.full_user.about or ''
+            logger.info(f"[ENT7AL] Target bio via GetFullUser: '{target_bio[:50]}...'")
+        except Exception as e:
+            logger.error(f"[ENT7AL] GetFullUser bio failed: {e}")
             try:
-                photos = await client.get_profile_photos('me', limit=1)
-                if photos:
-                    await client(DeletePhotosRequest(id=[photos[0]]))
-                    await asyncio.sleep(2)
-                with open(photo_path, 'rb') as f:
-                    data = f.read()
-                uploaded = await client.upload_file(data, file_name="restore.jpg")
-                await client(UploadProfilePhotoRequest(uploaded))
-                await asyncio.sleep(2)
-                os.remove(photo_path)
+                tf = await client.get_entity(target_user.id)
+                target_bio = getattr(tf, 'about', '') or ''
+            except:
+                pass
+        
+        bio_ok = await change_bio(client, target_bio)
+        
+        # تغيير الصورة
+        photo_ok = False
+        if target_user.photo:
+            try:
+                ps = await client.get_profile_photos('me', limit=1)
+                if ps:
+                    await client(DeletePhotosRequest(id=[ps[0]]))
+                    await asyncio.sleep(3)
+            except:
+                pass
+            photo_ok = await steal_profile_photo(client, target_user, phone)
+        else:
+            photo_ok = True
+        
+        ent7al_users[phone] = True
+        logger.info(f"[ENT7AL] Name:{'✅' if name_ok else '❌'} Bio:{'✅' if bio_ok else '❌'} Photo:{'✅' if photo_ok else '❌'}")
+        
+        if name_ok and bio_ok and photo_ok:
+            await event.edit("**• تم الانتحال**")
+        else:
+            await event.edit(f"**• تم الانتحال جزئياً**\nالاسم: {'✅' if name_ok else '❌'}\nالبايو: {'✅' if bio_ok else '❌'}\nالصورة: {'✅' if photo_ok else '❌'}")
+    
+    # ==================== الغاء انتحال ====================
+    @client.on(events.NewMessage(outgoing=True, pattern='.الغاء انتحال'))
+    async def unent7al(event):
+        await event.edit("**• جاري استعادة الحساب...**")
+        if not ent7al_users.get(phone) or not ent7al_original.get(phone):
+            await event.edit("**• لا يوجد انتحال**")
+            return
+        
+        orig = ent7al_original[phone]
+        name_ok = bio_ok = photo_ok = False
+        
+        try:
+            await client(UpdateProfileRequest(first_name=orig.get('first_name', ''), last_name=orig.get('last_name', '')))
+            await asyncio.sleep(1)
+            name_ok = True
+        except:
+            pass
+        
+        bio_ok = await change_bio(client, orig.get('about', ''))
+        
+        pp = orig.get('photo_path')
+        if pp and os.path.exists(pp):
+            try:
+                ps = await client.get_profile_photos('me', limit=1)
+                if ps:
+                    await client(DeletePhotosRequest(id=[ps[0]]))
+                    await asyncio.sleep(3)
+                with open(pp, 'rb') as f:
+                    await client(UploadProfilePhotoRequest(await client.upload_file(f.read(), file_name="restore.jpg")))
+                await asyncio.sleep(3)
+                os.remove(pp)
                 photo_ok = True
             except:
                 pass
         
         ent7al_users[phone] = False
         ent7al_original[phone] = {}
-        
         logger.info(f"[RESTORE] Name:{'✅' if name_ok else '❌'} Bio:{'✅' if bio_ok else '❌'} Photo:{'✅' if photo_ok else '❌'}")
         
         if name_ok and bio_ok and photo_ok:
@@ -813,31 +656,28 @@ async def setup_handlers(client: TelegramClient, phone: str):
         else:
             await event.edit(f"**• تم فك الانتحال جزئياً**\nالاسم: {'✅' if name_ok else '❌'}\nالبايو: {'✅' if bio_ok else '❌'}\nالصورة: {'✅' if photo_ok else '❌'}")
     
-    # ==================== باقي الأوامر ====================
-    
+    # ============ باقي الأوامر ============
     @client.on(events.NewMessage(outgoing=True, pattern='.كتم'))
-    async def mute_cmd(event):
+    async def mute(event):
         if event.is_reply:
-            muted_users[phone][event.reply_to_msg_id] = True
-            await event.edit("**• تم الكتم**")
+            muted_users[phone][(await event.get_reply_message()).sender_id] = True
         elif event.is_private:
             muted_users[phone][event.chat_id] = True
-            await event.edit("**• تم الكتم**")
+        await event.edit("**• تم الكتم**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء كتم'))
-    async def unmute_cmd(event):
+    async def unmute(event):
         if event.is_reply:
-            muted_users[phone].pop(event.reply_to_msg_id, None)
+            muted_users[phone].pop((await event.get_reply_message()).sender_id, None)
         elif event.is_private:
             muted_users[phone].pop(event.chat_id, None)
         await event.edit("**• تم فك الكتم**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.حظر'))
-    async def ban_cmd(event):
+    async def ban(event):
         tid = None
         if event.is_reply:
-            r = await event.get_reply_message()
-            tid = r.sender_id
+            tid = (await event.get_reply_message()).sender_id
         elif event.is_private:
             tid = event.chat_id
         if tid:
@@ -846,14 +686,13 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 banned_users[phone][tid] = True
                 await event.edit("**• تم الحظر**")
             except:
-                await event.edit("**• فشل الحظر**")
+                await event.edit("**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء حظر'))
-    async def unban_cmd(event):
+    async def unban(event):
         tid = None
         if event.is_reply:
-            r = await event.get_reply_message()
-            tid = r.sender_id
+            tid = (await event.get_reply_message()).sender_id
         elif event.is_private:
             tid = event.chat_id
         if tid:
@@ -862,84 +701,74 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 banned_users[phone].pop(tid, None)
                 await event.edit("**• تم فك الحظر**")
             except:
-                await event.edit("**• فشل فك الحظر**")
+                await event.edit("**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.تقيد'))
-    async def restrict_cmd(event):
+    async def restrict(event):
         if event.is_group and event.is_reply:
-            r = await event.get_reply_message()
             try:
-                await client.edit_permissions(event.chat_id, r.sender_id, send_messages=False)
+                await client.edit_permissions(event.chat_id, (await event.get_reply_message()).sender_id, send_messages=False)
                 await event.edit("**• تم التقييد**")
             except:
-                await event.edit("**• فشل التقييد**")
+                await event.edit("**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقييد'))
-    async def unrestrict_cmd(event):
+    async def unrestrict(event):
         if event.is_group and event.is_reply:
-            r = await event.get_reply_message()
             try:
-                await client.edit_permissions(event.chat_id, r.sender_id, send_messages=True)
+                await client.edit_permissions(event.chat_id, (await event.get_reply_message()).sender_id, send_messages=True)
                 await event.edit("**• تم فك التقييد**")
             except:
-                await event.edit("**• فشل فك التقييد**")
+                await event.edit("**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.تهكير'))
-    async def hack_cmd(event):
-        target_name = "الضحية"
+    async def hack(event):
+        n = "الضحية"
         if event.is_reply:
             try:
-                r = await event.get_reply_message()
-                u = await client.get_entity(r.sender_id)
-                target_name = u.first_name
+                n = (await client.get_entity((await event.get_reply_message()).sender_id)).first_name
             except:
                 pass
         await event.edit("**جاري التهكير...**")
         await asyncio.sleep(1)
         await event.edit("**تم اختراق 50%**")
         await asyncio.sleep(1)
-        await event.edit(f"**تم تهكير {target_name} بنجاح**")
+        await event.edit(f"**تم تهكير {n} بنجاح**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.سجل'))
-    async def save_cmd(event):
+    async def save(event):
         save_deleted[phone] = True
         await event.edit("**• يتم تسجيل حذف الرسائل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء سجل'))
-    async def stop_save_cmd(event):
+    async def nosave(event):
         save_deleted[phone] = False
         await event.edit("**• تم تعطيل تسجيل الرسائل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.اسم (.+)'))
-    async def name_cmd(event):
-        new_name = event.pattern_match.group(1).strip()
+    async def name(event):
         try:
-            await client(UpdateProfileRequest(first_name=new_name, last_name=''))
+            await client(UpdateProfileRequest(first_name=event.pattern_match.group(1).strip(), last_name=''))
             await event.edit("**• تم تغيير الاسم**")
         except:
-            await event.edit("**• فشل تغيير الاسم**")
+            await event.edit("**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.بايو (.+)'))
-    async def bio_cmd(event):
-        new_bio = event.pattern_match.group(1).strip()
-        success = await change_bio(client, new_bio)
-        if success:
-            await event.edit("**• تم تغيير البايو**")
-        else:
-            await event.edit("**• فشل تغيير البايو**")
+    async def bio(event):
+        ok = await change_bio(client, event.pattern_match.group(1).strip())
+        await event.edit("**• تم تغيير البايو**" if ok else "**• فشل**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.خط عريض'))
-    async def bold_cmd(event):
+    async def bold(event):
         bold_mode[phone] = True
         await event.edit("**• تم تفعيل الخط العريض**")
     
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء خط'))
-    async def stop_bold_cmd(event):
+    async def nobold(event):
         bold_mode[phone] = False
         await event.edit("**• تم الغاء الخط العريض**")
     
-    # مراقبة القناة
-    async def periodic_channel_check():
+    async def channel_check():
         while True:
             await asyncio.sleep(600)
             try:
@@ -947,9 +776,8 @@ async def setup_handlers(client: TelegramClient, phone: str):
             except:
                 pass
     
-    asyncio.ensure_future(periodic_channel_check(), loop=main_loop)
-    
-    logger.info(f"Handlers ready for {phone}")
+    asyncio.ensure_future(channel_check(), loop=main_loop)
+    logger.info(f"Handlers ready: {phone}")
 
 def start_main_loop():
     asyncio.set_event_loop(main_loop)
@@ -989,7 +817,6 @@ async def send_code():
         pending_logins[phone] = (client, sent.phone_code_hash, api_id, api_hash)
         return jsonify({"status": "code_sent", "message": "تم إرسال كود التحقق"})
     except Exception as e:
-        logger.error(f"Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/verify', methods=['POST'])
@@ -1032,7 +859,5 @@ async def disconnect(phone):
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
-    logger.info("=" * 50)
     logger.info(f"qgram UserBot - PIL: {PIL_AVAILABLE}")
-    logger.info("=" * 50)
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
