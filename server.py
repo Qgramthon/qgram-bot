@@ -48,8 +48,6 @@ banned_users: Dict[str, Dict[int, bool]] = {}
 bold_mode: Dict[str, bool] = {}
 client_me: Dict[str, any] = {}
 
-# ==================== إطارات إيموجيات سلسة ====================
-
 LAUGH_FRAMES = [
     "😂🤣😭😹", "🤣😂😭😹", "🤣😭😂😹", "😭🤣😂😹",
     "😭🤣😹😂", "😭😹🤣😂", "😹😭🤣😂", "😹😂🤣😭",
@@ -77,8 +75,6 @@ ROSE_FRAMES = [
     "🌹🌸🌷🥀", "🌹🌸🥀🌷", "🌹🥀🌸🌷", "🥀🌹🌸🌷",
     "🥀🌸🌹🌷", "🌸🥀🌹🌷", "🌸🥀🌷🌹", "🌷🌸🥀🌹"
 ]
-
-# ==================== دوال مساعدة ====================
 
 def run_async_in_main_loop(coro):
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
@@ -197,17 +193,14 @@ def start_client_in_background(client, phone):
 async def get_user_name(client, user_id):
     try:
         user = await client.get_entity(user_id)
-        return user.first_name or "المستخدم"
+        return user.first_name or "User"
     except:
-        return "المستخدم"
+        return "User"
 
 async def animate_emojis(event, frames, speed=0.4):
-    """تحريك بطيء وسلس للإيموجيات"""
     for frame in frames:
         await event.edit(f"**{frame}**")
         await asyncio.sleep(speed)
-
-# ==================== إعداد handlers ====================
 
 async def setup_handlers(client, phone):
     if phone not in muted_users:
@@ -246,12 +239,10 @@ async def setup_handlers(client, phone):
             except:
                 pass
     
-    # ==================== سورس ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.سورس$'))
     async def src(event):
         await event.edit("**تيليثون ڪيوجـࢪام 𔓕**\n\n• لتنصيب السورس [إضغط هنا](https://t.me/Q_g_r_a_m)\n• لمتابعة التحديثات [إضغط هنا](https://t.me/Q_g_r_a_m)", parse_mode='md')
     
-    # ==================== اوامر ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اوامر$'))
     async def cmds(event):
         await event.edit("""**اوامر السورس 𔓕**
@@ -290,7 +281,6 @@ async def setup_handlers(client, phone):
 اوامر
 سورس""", parse_mode='md')
     
-    # ==================== ايدي / ا ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.(ايدي|ا)$'))
     async def id_cmd(event):
         await event.delete()
@@ -315,7 +305,6 @@ async def setup_handlers(client, phone):
         lines.append(f"Ꭵძ {user.id}")
         await client.send_message(event.chat_id, "\n".join(lines))
     
-    # ==================== تقليد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تقليد$'))
     async def taq(event):
         target = None
@@ -338,7 +327,6 @@ async def setup_handlers(client, phone):
             del taqleed_users[phone][target]
         await event.edit("**• تم فك التقليد**")
     
-    # ==================== خط / غ خط ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.خط$'))
     async def bold(event):
         bold_mode[phone] = True
@@ -349,7 +337,6 @@ async def setup_handlers(client, phone):
         bold_mode[phone] = False
         await event.edit("**• تم الغاء الخط العريض**")
     
-    # ==================== اسم ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اسم (.+)'))
     async def name(event):
         try:
@@ -358,7 +345,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل**")
     
-    # ==================== بايو ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بايو (.+)'))
     async def bio(event):
         try:
@@ -367,7 +353,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل**")
     
-    # ==================== ث / غ ث ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ث$'))
     async def pin_msg(event):
         try:
@@ -392,7 +377,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل**")
     
-    # ==================== اضافة ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اضافة (\d+)'))
     async def add_contacts(event):
         count = int(event.pattern_match.group(1))
@@ -413,7 +397,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل**")
     
-    # ==================== عدد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.عدد$'))
     async def msg_count(event):
         await event.edit("**• جاري العد**")
@@ -423,7 +406,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل**")
     
-    # ==================== حذف ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حذف (\d+)$'))
     async def delete_count(event):
         count = int(event.pattern_match.group(1))
@@ -444,7 +426,6 @@ async def setup_handlers(client, phone):
             except:
                 await event.edit("**• فشل**")
     
-    # ==================== رن ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رن$'))
     async def call(event):
         await event.edit("**• جاري الاتصال**")
@@ -462,7 +443,6 @@ async def setup_handlers(client, phone):
         except:
             await event.edit("**• فشل الاتصال**")
     
-    # ==================== قفل / فتح ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قفل$'))
     async def lock(event):
         if event.is_group:
@@ -483,7 +463,6 @@ async def setup_handlers(client, phone):
             except:
                 await event.edit("**• فشل**")
     
-    # ==================== كتم / غ كتم ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.كتم$'))
     async def mute(event):
         target = None
@@ -506,7 +485,6 @@ async def setup_handlers(client, phone):
             del muted_users[phone][target]
         await event.edit("**• تم فك الكتم**")
     
-    # ==================== حظر / غ حظر ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حظر$'))
     async def ban(event):
         target = None
@@ -538,7 +516,6 @@ async def setup_handlers(client, phone):
             except:
                 await event.edit("**• فشل**")
     
-    # ==================== تقيد / غ تقييد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تقيد$'))
     async def restrict(event):
         if event.is_group and event.is_reply:
@@ -557,7 +534,6 @@ async def setup_handlers(client, phone):
             except:
                 await event.edit("**• فشل**")
     
-    # ==================== تهكير ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تهكير$'))
     async def hack(event):
         n = "الضحية"
@@ -572,7 +548,6 @@ async def setup_handlers(client, phone):
         await asyncio.sleep(1)
         await event.edit(f"**تم تهكير {n} بنجاح**")
     
-    # ==================== ذكاء ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ذكاء (.+)'))
     async def ai_cmd(event):
         question = event.pattern_match.group(1).strip()
@@ -580,7 +555,6 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, question)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
-    # ==================== بوت ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بوت (.+)'))
     async def bot_cmd(event):
         question = event.pattern_match.group(1).strip()
@@ -589,7 +563,6 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
-    # ==================== صراحة ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.صراحة$'))
     async def sarah(event):
         await event.edit("**• جاري توليد سؤال صراحة**")
@@ -597,7 +570,6 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
-    # ==================== كت ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.كت$'))
     async def kat(event):
         await event.edit("**• جاري توليد سؤال**")
@@ -605,30 +577,25 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
-    # ==================== ضحك (أنيميشن بطيء وسلس) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ضحك$'))
     async def laugh(event):
         await animate_emojis(event, LAUGH_FRAMES, 0.4)
     
-    # ==================== غيوم (أنيميشن بطيء وسلس) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غيوم$'))
     async def clouds(event):
         await animate_emojis(event, CLOUD_FRAMES, 0.4)
     
-    # ==================== قلوب (أنيميشن بطيء وسلس) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قلوب$'))
     async def hearts(event):
         await animate_emojis(event, HEART_FRAMES, 0.4)
     
-    # ==================== ورود (أنيميشن بطيء وسلس) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ورود$'))
     async def roses(event):
         await animate_emojis(event, ROSE_FRAMES, 0.4)
     
-    # ==================== غباء ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غباء$'))
     async def stupidity(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -641,13 +608,12 @@ async def setup_handlers(client, phone):
             except:
                 pass
         percentage = random.randint(60, 100)
-        await event.edit(f"**نسبة غباء {target_name} {percentage}%**")
+        await event.edit(f"**{target_name}'s stupidity: {percentage}%**")
     
-    # ==================== تحويل ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تحويل (\d+)'))
     async def transfer(event):
         amount = event.pattern_match.group(1)
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -659,12 +625,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم إرسال {amount} دولار للشحات {target_name}**")
+        await event.edit(f"**Sent {amount} USD to beggar {target_name}**")
     
-    # ==================== رفع شحات ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع شحات$'))
     async def raf3_shahat(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -676,12 +641,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} شحات**")
+        await event.edit(f"**Promoted {target_name} to Beggar**")
     
-    # ==================== رفع حمار ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع حمار$'))
     async def raf3_hmar(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -693,12 +657,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} حمار**")
+        await event.edit(f"**Promoted {target_name} to Donkey**")
     
-    # ==================== رفع غبي ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع غبي$'))
     async def raf3_ghaby(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -710,12 +673,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} غبي**")
+        await event.edit(f"**Promoted {target_name} to Stupid**")
     
-    # ==================== رفع سباك ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع سباك$'))
     async def raf3_sabbak(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -727,12 +689,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} سباك**")
+        await event.edit(f"**Promoted {target_name} to Plumber**")
     
-    # ==================== رفع مالك ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع مالك$'))
     async def raf3_malek(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -744,12 +705,11 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} مالك**")
+        await event.edit(f"**Promoted {target_name} to King**")
     
-    # ==================== رفع ادمن ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع ادمن$'))
     async def raf3_admin(event):
-        target_name = "المستخدم"
+        target_name = "User"
         if event.is_reply:
             try:
                 reply = await event.get_reply_message()
@@ -761,7 +721,7 @@ async def setup_handlers(client, phone):
                 target_name = await get_user_name(client, event.chat_id)
             except:
                 pass
-        await event.edit(f"**تم رفع {target_name} أدمن**")
+        await event.edit(f"**Promoted {target_name} to Admin**")
     
     async def channel_check():
         while True:
@@ -782,9 +742,488 @@ def start_main_loop():
 
 threading.Thread(target=start_main_loop, daemon=True).start()
 
+# ======================== FLASK ROUTES ========================
+
 @app.route('/')
 def home():
-    return """<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>qgram-bot</title><script src="https://cdn.tailwindcss.com"></script><style>body{background:linear-gradient(135deg,#1e3a8a,#3b82f6)}.card{background:rgba(255,255,255,0.95)}</style></head><body class="min-h-screen flex items-center justify-center p-4"><div class="max-w-lg w-full"><div class="card rounded-3xl shadow-2xl p-8"><div class="text-center mb-8"><h1 class="text-4xl font-bold text-blue-700 mb-2">qgram-bot</h1><p class="text-gray-600">Telegram UserBot</p></div><div id="form-section"><div id="step1"><h2 class="text-2xl font-semibold mb-6 text-center">تسجيل الدخول</h2><form id="sendForm" class="space-y-5"><div><label class="block text-sm font-medium text-gray-700 mb-1">API ID</label><input type="text" name="api_id" placeholder="12345678" required class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">API HASH</label><input type="text" name="api_hash" placeholder="0123456789abcdef..." required class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label><input type="text" name="phone" placeholder="+201234567890" required class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500"></div><button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-2xl transition">ارسال كود التحقق</button></form></div><div id="step2" class="hidden"><h2 class="text-2xl font-semibold mb-6 text-center">ادخل كود التحقق</h2><form id="verifyForm" class="space-y-5"><input type="hidden" name="phone" id="verify_phone"><div><label class="block text-sm font-medium text-gray-700 mb-1">كود التحقق</label><input type="text" name="code" placeholder="12345" required maxlength="5" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500 text-center text-2xl tracking-widest"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">2FA (اختياري)</label><input type="password" name="password" placeholder="••••••••" class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-500"></div><button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-2xl transition">تفعيل</button></form><button onclick="backToStep1()" class="mt-4 w-full text-gray-500">العودة</button></div></div><div id="result" class="mt-6 text-center hidden"></div></div><div class="text-center mt-6"><a href="/api/status" class="text-white hover:underline">عرض الحالة</a></div></div><script>async function showResult(m,s){const d=document.getElementById('result');d.className=`mt-6 p-4 rounded-2xl text-center font-medium ${s?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`;d.innerHTML=m;d.classList.remove('hidden')}document.getElementById('sendForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=new FormData(e.target);try{const r=await fetch('/api/send_code',{method:'POST',body:f});const d=await r.json();if(d.status==='code_sent'){document.getElementById('verify_phone').value=f.get('phone');document.getElementById('step1').classList.add('hidden');document.getElementById('step2').classList.remove('hidden');showResult(d.message,true)}else{showResult(d.message||d.error||'حدث خطأ',false)}}catch(err){showResult('حدث خطأ',false)}});document.getElementById('verifyForm').addEventListener('submit',async(e)=>{e.preventDefault();const f=new FormData(e.target);try{const r=await fetch('/api/verify',{method:'POST',body:f});const d=await r.json();if(d.status==='success'){showResult(d.message,true);setTimeout(()=>location.reload(),3000)}else{showResult(d.message||'فشل التفعيل',false)}}catch(err){showResult('حدث خطأ',false)}});function backToStep1(){document.getElementById('step1').classList.remove('hidden');document.getElementById('step2').classList.add('hidden');document.getElementById('result').classList.add('hidden')}</script></body></html>"""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <title>Othon</title>
+    <style>
+        :root {
+            --bg: #0A0A19;
+            --surface: rgba(255, 255, 255, 0.04);
+            --glass: rgba(255, 255, 255, 0.06);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-hover: rgba(255, 255, 255, 0.1);
+            --text: #FFFFFF;
+            --text-secondary: rgba(255, 255, 255, 0.5);
+            --text-tertiary: rgba(255, 255, 255, 0.3);
+            --accent: #4F6EF7;
+            --accent-glow: rgba(79, 110, 247, 0.3);
+            --success: #34C759;
+            --danger: #FF3B30;
+            --radius-sm: 12px;
+            --radius: 18px;
+            --radius-lg: 24px;
+            --radius-xl: 32px;
+            --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background glow */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at 50% 0%, rgba(79, 110, 247, 0.06) 0%, transparent 60%),
+                        radial-gradient(ellipse at 80% 80%, rgba(79, 110, 247, 0.04) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+            animation: ambientPulse 8s ease-in-out infinite;
+        }
+
+        @keyframes ambientPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 420px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            font-size: 52px;
+            font-weight: 700;
+            letter-spacing: -1.5px;
+            background: linear-gradient(135deg, #FFFFFF 0%, rgba(255,255,255,0.8) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.1;
+            margin-bottom: 4px;
+        }
+
+        .tagline {
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+        }
+
+        /* Glass card */
+        .card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-xl);
+            padding: 28px 24px;
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4),
+                        0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        /* Form section */
+        .form-section {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .form-section.hidden {
+            display: none;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        /* Input group */
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+            margin-bottom: 8px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 14px 16px;
+            background: var(--surface);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 15px;
+            font-family: var(--font-mono);
+            letter-spacing: 0.5px;
+            outline: none;
+            transition: all 0.25s ease;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .input-field::placeholder {
+            color: var(--text-tertiary);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+            letter-spacing: 0;
+        }
+
+        .input-field:focus {
+            border-color: rgba(79, 110, 247, 0.5);
+            box-shadow: 0 0 0 4px rgba(79, 110, 247, 0.08);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        /* Button */
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-appearance: none;
+            appearance: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #FFFFFF;
+            margin-top: 8px;
+        }
+
+        .btn-primary:hover {
+            background: #5F7EF9;
+            box-shadow: 0 8px 32px var(--accent-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+            transition: transform 0.1s ease;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #FFFFFF;
+            margin-top: 8px;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--glass-border);
+            margin-top: 12px;
+        }
+
+        .btn-ghost:hover {
+            background: var(--glass-hover);
+            color: var(--text);
+        }
+
+        /* Result */
+        .result-box {
+            margin-top: 20px;
+            padding: 14px 18px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            text-align: center;
+            display: none;
+            animation: fadeSlideIn 0.4s ease;
+        }
+
+        .result-box.show {
+            display: block;
+        }
+
+        .result-box.success {
+            background: rgba(52, 199, 89, 0.1);
+            border: 1px solid rgba(52, 199, 89, 0.2);
+            color: var(--success);
+        }
+
+        .result-box.error {
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            color: var(--danger);
+        }
+
+        @keyframes fadeSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Status link */
+        .status-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .status-link:hover {
+            color: var(--text-secondary);
+        }
+
+        /* Password field wrapper for hidden state */
+        .input-password-wrapper {
+            position: relative;
+        }
+
+        .input-password-wrapper input {
+            -webkit-text-security: disc;
+        }
+
+        /* Loading state */
+        .btn.loading {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .btn.loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 18px;
+            height: 18px;
+            margin-left: -9px;
+            margin-top: -9px;
+            border: 2px solid transparent;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Hide password text visually when typing */
+        .masked-input {
+            -webkit-text-security: disc;
+            text-security: disc;
+        }
+
+        /* Responsive */
+        @media (max-width: 380px) {
+            .card {
+                padding: 20px 16px;
+            }
+            .logo {
+                font-size: 42px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="logo">Othon</h1>
+            <p class="tagline">Secure Client Layer</p>
+        </div>
+
+        <div class="card">
+            <!-- Step 1: Sign In -->
+            <div id="step1" class="form-section">
+                <p class="section-title">Sign In</p>
+                <form id="sendForm" autocomplete="off">
+                    <div class="input-group">
+                        <label class="input-label">API ID</label>
+                        <input type="text" name="api_id" id="api_id" placeholder="12345678" required class="input-field" inputmode="numeric" pattern="[0-9]*">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">API Hash</label>
+                        <input type="password" name="api_hash" id="api_hash" placeholder="••••••••••••••••" required class="input-field masked-input" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Phone Number</label>
+                        <input type="text" name="phone" id="phone" placeholder="+201234567890" required class="input-field" inputmode="numeric">
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="sendBtn">
+                        Send Verification Code
+                    </button>
+                </form>
+            </div>
+
+            <!-- Step 2: Verify -->
+            <div id="step2" class="form-section hidden">
+                <p class="section-title">Verify Code</p>
+                <form id="verifyForm" autocomplete="off">
+                    <input type="hidden" name="phone" id="verify_phone">
+                    <div class="input-group">
+                        <label class="input-label">Verification Code</label>
+                        <input type="text" name="code" id="code" placeholder="12345" required maxlength="5" class="input-field" inputmode="numeric" pattern="[0-9]*" style="text-align:center;font-size:24px;letter-spacing:8px;">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">2FA Password (optional)</label>
+                        <input type="password" name="password" id="password" placeholder="••••••••" class="input-field masked-input" autocomplete="off">
+                    </div>
+                    <button type="submit" class="btn btn-success" id="verifyBtn">
+                        Activate
+                    </button>
+                </form>
+                <button onclick="backToStep1()" class="btn btn-ghost">
+                    ← Back
+                </button>
+            </div>
+
+            <div id="result" class="result-box"></div>
+        </div>
+
+        <a href="/api/status" class="status-link">System Status</a>
+    </div>
+
+    <script>
+        const resultBox = document.getElementById('result');
+        const sendBtn = document.getElementById('sendBtn');
+        const verifyBtn = document.getElementById('verifyBtn');
+
+        function showResult(message, isSuccess) {
+            resultBox.className = 'result-box show ' + (isSuccess ? 'success' : 'error');
+            resultBox.innerHTML = message;
+        }
+
+        function setLoading(btn, loading) {
+            if (loading) {
+                btn.classList.add('loading');
+                btn.disabled = true;
+            } else {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById('sendForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            setLoading(sendBtn, true);
+
+            try {
+                const res = await fetch('/api/send_code', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.status === 'code_sent') {
+                    document.getElementById('verify_phone').value = formData.get('phone');
+                    document.getElementById('step1').classList.add('hidden');
+                    document.getElementById('step2').classList.remove('hidden');
+                    showResult(data.message || 'Code sent successfully', true);
+                } else if (data.status === 'already_active') {
+                    showResult('Session already active', true);
+                } else {
+                    showResult(data.message || data.error || 'An error occurred', false);
+                }
+            } catch (error) {
+                showResult('Connection error', false);
+            } finally {
+                setLoading(sendBtn, false);
+            }
+        });
+
+        document.getElementById('verifyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            setLoading(verifyBtn, true);
+
+            try {
+                const res = await fetch('/api/verify', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    showResult('Activated successfully', true);
+                    setTimeout(() => location.reload(), 2500);
+                } else {
+                    showResult(data.message || 'Activation failed', false);
+                }
+            } catch (error) {
+                showResult('Connection error', false);
+            } finally {
+                setLoading(verifyBtn, false);
+            }
+        });
+
+        function backToStep1() {
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            resultBox.className = 'result-box';
+        }
+    </script>
+</body>
+</html>
+"""
 
 @app.route('/health')
 def health():
@@ -798,7 +1237,7 @@ async def send_code():
         api_hash = request.form.get('api_hash')
         phone = request.form.get('phone', '').strip()
         if not api_id or not api_hash or not phone:
-            return jsonify({"status": "error"}), 400
+            return jsonify({"status": "error", "message": "All fields required"}), 400
         api_configs_storage[phone] = {'api_id': api_id, 'api_hash': api_hash}
         client = TelegramClient(StringSession(), api_id, api_hash)
         await client.connect()
@@ -807,12 +1246,12 @@ async def send_code():
             client_me[phone] = await client.get_me()
             start_client_in_background(client, phone)
             await save_all_sessions()
-            return jsonify({"status": "already_active"})
+            return jsonify({"status": "already_active", "message": "Session active"})
         sent = await client.send_code_request(phone)
         pending_logins[phone] = (client, sent.phone_code_hash, api_id, api_hash)
-        return jsonify({"status": "code_sent"})
+        return jsonify({"status": "code_sent", "message": "Code sent"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)[:100]}), 500
 
 @app.route('/api/verify', methods=['POST'])
 @async_route
@@ -821,23 +1260,23 @@ async def verify():
     code = request.form.get('code', '').strip()
     password = request.form.get('password')
     if not phone or not code or phone not in pending_logins:
-        return jsonify({"status": "error"}), 400
+        return jsonify({"status": "error", "message": "Invalid data"}), 400
     client, phone_code_hash, _, _ = pending_logins[phone]
     try:
         try:
             await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
         except SessionPasswordNeededError:
             if not password:
-                return jsonify({"status": "2fa_required"}), 401
+                return jsonify({"status": "2fa_required", "message": "2FA required"}), 401
             await client.sign_in(password=password)
         active_clients[phone] = client
         client_me[phone] = await client.get_me()
         del pending_logins[phone]
         await save_all_sessions()
         start_client_in_background(client, phone)
-        return jsonify({"status": "success"})
+        return jsonify({"status": "success", "message": "Activated"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({"status": "error", "message": str(e)[:100]}), 400
 
 @app.route('/api/status')
 def status():
@@ -854,5 +1293,5 @@ async def disconnect(phone):
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
-    logger.info("🚀 qgram UserBot - Smooth Edition")
+    logger.info("🚀 Othon Server")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
