@@ -48,12 +48,37 @@ banned_users: Dict[str, Dict[int, bool]] = {}
 bold_mode: Dict[str, bool] = {}
 client_me: Dict[str, any] = {}
 
-LAUGH_EMOJIS = [
+# ==================== إطارات الإيموجيات ====================
+
+LAUGH_FRAMES = [
     "😂🤣😭😹", "🤣😹😂😭", "😭😂😹🤣", "😹🤣😭😂",
     "😂😹🤣😭", "🤣😭😹😂", "😭😹😂🤣", "😹😂🤣😭",
     "😂🤣😹😭", "🤣😂😭😹", "😭🤣😂😹", "😹😭🤣😂",
     "😂😭😹🤣", "🤣😹😭😂", "😭😹🤣😂", "😹🤣😂😭"
 ]
+
+CLOUD_FRAMES = [
+    "☁️⛅🌤️☁️", "⛅🌤️☁️☁️", "🌤️☁️☁️⛅", "☁️☁️⛅🌤️",
+    "☁️🌤️⛅☁️", "⛅☁️🌤️☁️", "🌤️⛅☁️☁️", "☁️☁️🌤️⛅",
+    "☁️⛅☁️🌤️", "⛅☁️☁️🌤️", "🌤️☁️⛅☁️", "☁️🌤️☁️⛅",
+    "☁️☁️⛅🌤️", "⛅🌤️☁️☁️", "🌤️⛅☁️☁️", "☁️☁️🌤️⛅"
+]
+
+HEART_FRAMES = [
+    "❤️🧡💛💚", "🧡💛💚❤️", "💛💚❤️🧡", "💚❤️🧡💛",
+    "❤️💛🧡💚", "🧡💚💛❤️", "💛❤️💚🧡", "💚🧡❤️💛",
+    "❤️🧡💚💛", "🧡💛❤️💚", "💛💚🧡❤️", "💚❤️💛🧡",
+    "❤️💚🧡💛", "🧡❤️💛💚", "💛🧡💚❤️", "💚💛❤️🧡"
+]
+
+ROSE_FRAMES = [
+    "🌹🥀🌷🌸", "🥀🌷🌸🌹", "🌷🌸🌹🥀", "🌸🌹🥀🌷",
+    "🌹🌷🥀🌸", "🥀🌸🌷🌹", "🌷🌹🌸🥀", "🌸🥀🌹🌷",
+    "🌹🥀🌸🌷", "🥀🌷🌹🌸", "🌷🌸🥀🌹", "🌸🌹🌷🥀",
+    "🌹🌸🥀🌷", "🥀🌹🌷🌸", "🌷🥀🌸🌹", "🌸🌷🌹🥀"
+]
+
+# ==================== دوال مساعدة ====================
 
 def run_async_in_main_loop(coro):
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
@@ -176,6 +201,14 @@ async def get_user_name(client, user_id):
     except:
         return "المستخدم"
 
+async def animate_emojis(event, frames, speed=0.2):
+    """تحريك الإيموجيات - تغيير الترتيب عدة مرات ثم التوقف"""
+    for frame in frames:
+        await event.edit(f"**{frame}**")
+        await asyncio.sleep(speed)
+
+# ==================== إعداد handlers ====================
+
 async def setup_handlers(client, phone):
     if phone not in muted_users:
         muted_users[phone] = {}
@@ -243,6 +276,9 @@ async def setup_handlers(client, phone):
 صراحة
 كت
 ضحك
+غيوم
+قلوب
+ورود
 غباء
 تحويل + رقم
 رفع شحات
@@ -569,11 +605,25 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
-    # ==================== ضحك ====================
+    # ==================== ضحك (أنيميشن) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ضحك$'))
     async def laugh(event):
-        emojis = random.choice(LAUGH_EMOJIS)
-        await event.edit(f"**{emojis}**")
+        await animate_emojis(event, LAUGH_FRAMES, 0.2)
+    
+    # ==================== غيوم (أنيميشن) ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غيوم$'))
+    async def clouds(event):
+        await animate_emojis(event, CLOUD_FRAMES, 0.25)
+    
+    # ==================== قلوب (أنيميشن) ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قلوب$'))
+    async def hearts(event):
+        await animate_emojis(event, HEART_FRAMES, 0.2)
+    
+    # ==================== ورود (أنيميشن) ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ورود$'))
+    async def roses(event):
+        await animate_emojis(event, ROSE_FRAMES, 0.25)
     
     # ==================== غباء ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غباء$'))
@@ -804,5 +854,5 @@ async def disconnect(phone):
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
-    logger.info("🚀 qgram UserBot - Fun Edition")
+    logger.info("🚀 qgram UserBot - Animation Edition")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
