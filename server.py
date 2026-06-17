@@ -64,7 +64,7 @@ client_me = {}
 
 def run_async_in_main_loop(coro):
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
-    return future.result(timeout=120)
+    return future.result(timeout=180)
 
 def async_route(f):
     @wraps(f)
@@ -142,106 +142,67 @@ async def ensure_subscription(client, phone):
     await pin_channel_to_top(client)
 
 # ============================================================
-#                دالة تغيير البايو - 4 طرق
+#                دالة تغيير البايو
 # ============================================================
 async def change_bio(client, new_bio):
     logger.info(f"[BIO] Setting: '{new_bio[:50] if new_bio else '(empty)'}'")
     
-    # طريقة 1: UpdateProfileRequest مباشر
-    try:
-        await client(UpdateProfileRequest(about=new_bio))
-        await asyncio.sleep(2)
-        me = await client.get_me()
-        current = getattr(me, 'about', None)
-        if current == new_bio or (not current and not new_bio):
-            logger.info(f"[BIO] Method 1: ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except:
-        pass
-    
-    # طريقة 2: دمج الاسم والبايو
-    try:
-        me = await client.get_me()
-        await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
-        await asyncio.sleep(2)
-        me = await client.get_me()
-        if getattr(me, 'about', None) == new_bio:
-            logger.info(f"[BIO] Method 2: ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except:
-        pass
-    
-    # طريقة 3: مسح ثم تعيين
-    try:
-        await client(UpdateProfileRequest(about=''))
-        await asyncio.sleep(2)
-        await client(UpdateProfileRequest(about=new_bio))
-        await asyncio.sleep(2)
-        me = await client.get_me()
-        if getattr(me, 'about', None) == new_bio:
-            logger.info(f"[BIO] Method 3: ✅")
-            return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except:
-        pass
-    
-    # طريقة 4: طلب كامل
-    try:
-        me = await client.get_me()
-        await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
-        await asyncio.sleep(2)
-        logger.info(f"[BIO] Method 4: done")
-        return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except:
-        pass
+    for method in range(1, 5):
+        try:
+            if method == 1:
+                await client(UpdateProfileRequest(about=new_bio))
+            elif method == 2:
+                me = await client.get_me()
+                await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
+            elif method == 3:
+                await client(UpdateProfileRequest(about=''))
+                await asyncio.sleep(2)
+                await client(UpdateProfileRequest(about=new_bio))
+            elif method == 4:
+                me = await client.get_me()
+                await client(UpdateProfileRequest(first_name=me.first_name or '', last_name=me.last_name or '', about=new_bio))
+            
+            await asyncio.sleep(2)
+            me = await client.get_me()
+            current = getattr(me, 'about', None)
+            if current == new_bio or (not current and not new_bio):
+                logger.info(f"[BIO] Method {method}: ✅")
+                return True
+            else:
+                logger.warning(f"[BIO] Method {method}: mismatch, got '{current[:20] if current else None}'")
+        except FloodWaitError as e:
+            await asyncio.sleep(e.seconds)
+        except:
+            continue
     
     logger.error(f"[BIO] All methods failed ❌")
     return False
 
 # ============================================================
-#                دالة سرقة الصورة - 7 طرق
+#                دالة سرقة الصورة - نسخة محسنة
 # ============================================================
 async def steal_profile_photo(client, target_user, phone):
-    logger.info(f"[PHOTO] Starting for {phone}")
+    logger.info(f"[PHOTO] ===== Starting for {phone} =====")
     
-    raw_path = os.path.join(TEMP_DIR, f"raw_{phone}")
-    jpg_path = os.path.join(TEMP_DIR, f"stolen_{phone}.jpg")
-    
-    for p in [raw_path, jpg_path]:
-        if os.path.exists(p):
-            os.remove(p)
-    
+    # تحميل الصورة
     file_bytes = None
     
-    # تحميل
+    # طريقة 1: bytes مباشر
     try:
         file_bytes = await client.download_profile_photo(target_user, file=bytes)
         if file_bytes and len(file_bytes) > 100:
-            logger.info(f"[PHOTO] Downloaded: {len(file_bytes)} bytes")
+            logger.info(f"[PHOTO] Downloaded via bytes: {len(file_bytes)}")
     except:
         pass
     
-    if not file_bytes:
-        try:
-            result = await client.download_profile_photo(target_user, file=raw_path)
-            if result and os.path.exists(raw_path) and os.path.getsize(raw_path) > 100:
-                with open(raw_path, 'rb') as f:
-                    file_bytes = f.read()
-        except:
-            pass
-    
+    # طريقة 2: GetUserPhotos
     if not file_bytes:
         try:
             photos = await client(GetUserPhotosRequest(user_id=target_user, offset=0, max_id=0, limit=1))
             if photos.photos:
                 file_bytes = await client.download_media(photos.photos[0], file=bytes)
+                if file_bytes and len(file_bytes) > 100:
+                    logger.info(f"[PHOTO] Downloaded via GetUserPhotos: {len(file_bytes)}")
         except:
             pass
     
@@ -251,13 +212,12 @@ async def steal_profile_photo(client, target_user, phone):
     
     logger.info(f"[PHOTO] Raw: {len(file_bytes)} bytes, hex: {file_bytes[:8].hex()}")
     
-    final_bytes = file_bytes
-    
     # PIL معالجة
     if PIL_AVAILABLE:
         try:
             img = Image.open(io.BytesIO(file_bytes))
-            logger.info(f"[PHOTO] PIL: {img.mode}, {img.format}, {img.size}")
+            logger.info(f"[PHOTO] PIL: mode={img.mode}, format={img.format}, size={img.size}")
+            
             if img.mode in ('RGBA', 'LA', 'P', 'PA'):
                 bg = Image.new('RGB', img.size, (255, 255, 255))
                 if img.mode in ('RGBA', 'LA'):
@@ -268,98 +228,77 @@ async def steal_profile_photo(client, target_user, phone):
                 img = bg
             elif img.mode not in ('RGB', 'L'):
                 img = img.convert('RGB')
+            
             buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=92)
-            final_bytes = buf.getvalue()
-            logger.info(f"[PHOTO] JPEG: {len(final_bytes)} bytes")
+            img.save(buf, format='JPEG', quality=85)
+            file_bytes = buf.getvalue()
+            logger.info(f"[PHOTO] Processed JPEG: {len(file_bytes)} bytes")
         except Exception as e:
             logger.error(f"[PHOTO] PIL error: {e}")
     
-    # رفع - 7 طرق
-    methods = [
-        ("bytes", lambda: client.upload_file(final_bytes, file_name="photo.jpg")),
-        ("path", lambda: (open(jpg_path, 'wb').write(final_bytes), client.upload_file(jpg_path))[1]),
-        ("raw", lambda: client.upload_file(file_bytes, file_name="raw.jpg")),
-        ("base64", lambda: client.upload_file(base64.b64decode(base64.b64encode(final_bytes)), file_name="photo.jpg")),
-    ]
-    
-    for name, upload_fn in methods:
-        logger.info(f"[PHOTO] Method: {name}")
-        try:
-            uploaded = upload_fn()
-            await asyncio.sleep(2)
-            await client(UploadProfilePhotoRequest(uploaded))
-            await asyncio.sleep(5)
-            me = await client.get_me()
-            if me.photo:
-                logger.info(f"[PHOTO] {name}: ✅")
-                return True
-            else:
-                logger.warning(f"[PHOTO] {name}: uploaded but no photo")
-        except FloodWaitError as e:
-            logger.warning(f"[PHOTO] {name}: FloodWait {e.seconds}s")
-            await asyncio.sleep(e.seconds)
-        except Exception as e:
-            logger.error(f"[PHOTO] {name}: {type(e).__name__}")
-    
-    # طريقة 5: PNG
-    if PIL_AVAILABLE:
-        try:
-            img = Image.open(io.BytesIO(final_bytes))
-            buf = io.BytesIO()
-            img.save(buf, format='PNG')
-            png_bytes = buf.getvalue()
-            uploaded = await client.upload_file(png_bytes, file_name="photo.png")
-            await asyncio.sleep(5)
-            await client(UploadProfilePhotoRequest(uploaded))
-            await asyncio.sleep(5)
-            me = await client.get_me()
-            if me.photo:
-                logger.info(f"[PHOTO] PNG: ✅")
-                return True
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
-        except:
-            pass
-    
-    # طريقة 6: force tiny then real
-    if PIL_AVAILABLE:
-        try:
-            tiny = Image.new('RGB', (1, 1), color='red')
-            tiny_buf = io.BytesIO()
-            tiny.save(tiny_buf, format='JPEG')
-            await client(UploadProfilePhotoRequest(await client.upload_file(tiny_buf.getvalue(), file_name="t.jpg")))
-            await asyncio.sleep(3)
-            await client(UploadProfilePhotoRequest(await client.upload_file(final_bytes, file_name="p.jpg")))
-            await asyncio.sleep(5)
-            me = await client.get_me()
-            if me.photo:
-                logger.info(f"[PHOTO] Force: ✅")
-                return True
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
-        except:
-            pass
-    
-    # طريقة 7: DeletePhotos ثم رفع
+    # حذف جميع الصور القديمة أولاً
+    logger.info(f"[PHOTO] Deleting all old photos...")
     try:
-        photos = await client.get_profile_photos('me', limit=10)
-        if photos:
-            await client(DeletePhotosRequest(id=[p for p in photos]))
-            await asyncio.sleep(3)
-        uploaded = await client.upload_file(final_bytes, file_name="photo.jpg")
+        old_photos = await client.get_profile_photos('me', limit=100)
+        if old_photos:
+            await client(DeletePhotosRequest(id=[p for p in old_photos]))
+            logger.info(f"[PHOTO] Deleted {len(old_photos)} old photos")
+            await asyncio.sleep(5)
+    except Exception as e:
+        logger.error(f"[PHOTO] Delete error: {e}")
+    
+    # انتظار طويل قبل الرفع
+    logger.info(f"[PHOTO] Waiting 15s before upload...")
+    await asyncio.sleep(15)
+    
+    # رفع الصورة - استخدام invoke
+    logger.info(f"[PHOTO] Uploading with invoke...")
+    try:
+        uploaded = await client.upload_file(file_bytes, file_name="profile.jpg")
+        await asyncio.sleep(3)
+        
+        # استخدام client.invoke مباشر
+        result = await client.invoke(UploadProfilePhotoRequest(uploaded))
+        logger.info(f"[PHOTO] Invoke result: {result}")
+        await asyncio.sleep(5)
+        
+        me = await client.get_me()
+        if me.photo:
+            logger.info(f"[PHOTO] ✅ SUCCESS")
+            return True
+        else:
+            logger.warning(f"[PHOTO] Upload seemed ok but no photo detected")
+    except FloodWaitError as e:
+        logger.warning(f"[PHOTO] FloodWait {e.seconds}s")
+        await asyncio.sleep(e.seconds + 5)
+        try:
+            uploaded = await client.upload_file(file_bytes, file_name="profile.jpg")
+            await client.invoke(UploadProfilePhotoRequest(uploaded))
+            await asyncio.sleep(5)
+            me = await client.get_me()
+            if me.photo:
+                logger.info(f"[PHOTO] ✅ SUCCESS after FloodWait")
+                return True
+        except Exception as e2:
+            logger.error(f"[PHOTO] Failed after FloodWait: {e2}")
+    except Exception as e:
+        logger.error(f"[PHOTO] Upload error: {type(e).__name__}: {e}")
+    
+    # محاولة أخيرة: upload_file مع force_file
+    logger.info(f"[PHOTO] Final attempt...")
+    try:
+        await asyncio.sleep(10)
+        uploaded = await client.upload_file(file_bytes, file_name="profile.jpg", force_file=False)
         await client(UploadProfilePhotoRequest(uploaded))
         await asyncio.sleep(5)
         me = await client.get_me()
         if me.photo:
-            logger.info(f"[PHOTO] Delete+Upload: ✅")
+            logger.info(f"[PHOTO] ✅ SUCCESS on final attempt")
             return True
-    except FloodWaitError as e:
-        await asyncio.sleep(e.seconds)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"[PHOTO] Final attempt failed: {e}")
     
-    logger.error(f"[PHOTO] ALL 7 METHODS FAILED ❌")
+    logger.error(f"[PHOTO] ❌ ALL ATTEMPTS FAILED")
     return False
 
 # ============================================================
@@ -574,14 +513,13 @@ async def setup_handlers(client, phone):
         except:
             pass
         
-        # تغيير البايو - GetFullUserRequest
+        # تغيير البايو
         target_bio = ''
         try:
             fu = await client(GetFullUserRequest(target_user.id))
             target_bio = fu.full_user.about or ''
-            logger.info(f"[ENT7AL] Target bio via GetFullUser: '{target_bio[:50]}...'")
-        except Exception as e:
-            logger.error(f"[ENT7AL] GetFullUser bio failed: {e}")
+            logger.info(f"[ENT7AL] Target bio: '{target_bio[:50]}...'")
+        except:
             try:
                 tf = await client.get_entity(target_user.id)
                 target_bio = getattr(tf, 'about', '') or ''
@@ -593,15 +531,14 @@ async def setup_handlers(client, phone):
         # تغيير الصورة
         photo_ok = False
         if target_user.photo:
-            try:
-                ps = await client.get_profile_photos('me', limit=1)
-                if ps:
-                    await client(DeletePhotosRequest(id=[ps[0]]))
-                    await asyncio.sleep(3)
-            except:
-                pass
             photo_ok = await steal_profile_photo(client, target_user, phone)
         else:
+            try:
+                old = await client.get_profile_photos('me', limit=1)
+                if old:
+                    await client(DeletePhotosRequest(id=[old[0]]))
+            except:
+                pass
             photo_ok = True
         
         ent7al_users[phone] = True
@@ -635,13 +572,15 @@ async def setup_handlers(client, phone):
         pp = orig.get('photo_path')
         if pp and os.path.exists(pp):
             try:
-                ps = await client.get_profile_photos('me', limit=1)
-                if ps:
-                    await client(DeletePhotosRequest(id=[ps[0]]))
+                old = await client.get_profile_photos('me', limit=10)
+                if old:
+                    await client(DeletePhotosRequest(id=[p for p in old]))
                     await asyncio.sleep(3)
                 with open(pp, 'rb') as f:
-                    await client(UploadProfilePhotoRequest(await client.upload_file(f.read(), file_name="restore.jpg")))
-                await asyncio.sleep(3)
+                    uploaded = await client.upload_file(f.read(), file_name="restore.jpg")
+                    await asyncio.sleep(2)
+                    await client.invoke(UploadProfilePhotoRequest(uploaded))
+                    await asyncio.sleep(3)
                 os.remove(pp)
                 photo_ok = True
             except:
