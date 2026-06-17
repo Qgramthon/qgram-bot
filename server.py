@@ -61,57 +61,23 @@ def async_route(f):
             return jsonify({"status": "error", "message": str(e)}), 500
     return wrapper
 
-# ======================== Gemini API ========================
-
 def ask_gemini(question: str) -> str:
-    """
-    سؤال Gemini AI بالطريقة الصحيحة
-    تستخدم requests.post مع headers و json
-    """
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-        
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        
-        data = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": question}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 1000
-            }
-        }
-        
+        headers = {'Content-Type': 'application/json'}
+        data = {"contents": [{"parts": [{"text": question}]}], "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000}}
         response = requests.post(url, headers=headers, json=data, timeout=30)
-        
         if response.status_code != 200:
-            logger.error(f"Gemini HTTP {response.status_code}: {response.text[:200]}")
             return None
-        
         result = response.json()
-        
-        # استخراج النص من الاستجابة
         if 'candidates' in result and len(result['candidates']) > 0:
             candidate = result['candidates'][0]
             if 'content' in candidate and 'parts' in candidate['content']:
                 for part in candidate['content']['parts']:
-                    if 'text' in part:
-                        text = part['text'].strip()
-                        if text:
-                            return text[:2000]
-        
-        logger.error(f"Gemini unexpected response: {json.dumps(result)[:300]}")
+                    if 'text' in part and part['text'].strip():
+                        return part['text'].strip()[:2000]
         return None
-        
-    except Exception as e:
-        logger.error(f"Gemini error: {type(e).__name__}: {e}")
+    except:
         return None
 
 # ======================== إدارة الجلسات ========================
@@ -198,6 +164,42 @@ def start_client_in_background(client, phone):
             logger.error(f"Error {phone}: {e}")
     asyncio.run_coroutine_threadsafe(run_client(), main_loop)
 
+# ======================== أوامر ترفيهية ========================
+
+LAUGH_EMOJIS = [
+    "😂🤣😭😹", "🤣😹😂😭", "😭😂😹🤣", "😹🤣😭😂",
+    "😂😹🤣😭", "🤣😭😹😂", "😭😹😂🤣", "😹😂🤣😭",
+    "😂🤣😹😭", "🤣😂😭😹", "😭🤣😂😹", "😹😭🤣😂",
+    "😂😭😹🤣", "🤣😹😭😂", "😭😹🤣😂", "😹🤣😂😭"
+]
+
+RAF3_TYPES = {
+    "شحات": "شحات",
+    "حمار": "حمار", 
+    "غبي": "غبي",
+    "سباك": "سباك",
+    "مالك": "مالك",
+    "ادمن": "أدمن"
+}
+
+def get_target_name(event):
+    """استخراج اسم الهدف من الرد أو المحادثة"""
+    if event.is_reply:
+        return (await event.get_reply_message()).sender_id
+    elif event.is_private:
+        return event.chat_id
+    return None
+
+async def get_user_name(client, user_id):
+    """جلب اسم المستخدم"""
+    try:
+        user = await client.get_entity(user_id)
+        return user.first_name or "المستخدم"
+    except:
+        return "المستخدم"
+
+# ======================== إعداد handlers ========================
+
 async def setup_handlers(client, phone):
     if phone not in muted_users:
         muted_users[phone] = {}
@@ -208,7 +210,6 @@ async def setup_handlers(client, phone):
     if phone not in bold_mode:
         bold_mode[phone] = False
     
-    # ==================== كتم تلقائي ====================
     @client.on(events.NewMessage(incoming=True))
     async def auto_mute(event):
         if event.is_private and event.sender_id in muted_users.get(phone, {}):
@@ -217,7 +218,6 @@ async def setup_handlers(client, phone):
             except:
                 pass
     
-    # ==================== تقليد تلقائي (خاص + جروبات) ====================
     @client.on(events.NewMessage(incoming=True))
     async def auto_taqleed(event):
         sender_id = event.sender_id
@@ -229,7 +229,6 @@ async def setup_handlers(client, phone):
                 except:
                     pass
     
-    # ==================== خط عريض ====================
     @client.on(events.NewMessage(outgoing=True))
     async def auto_bold(event):
         if bold_mode.get(phone, False) and event.text and not event.text.startswith('.'):
@@ -267,6 +266,15 @@ async def setup_handlers(client, phone):
 بوت + سؤال
 صراحة
 كت
+ضحك
+غباء
+تحويل + رقم
+رفع شحات
+رفع حمار
+رفع غبي
+رفع سباك
+رفع مالك
+رفع ادمن
 اوامر
 سورس""", parse_mode='md')
     
@@ -585,6 +593,152 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
     
+    # ==================== ضحك ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ضحك$'))
+    async def laugh(event):
+        emojis = random.choice(LAUGH_EMOJIS)
+        await event.edit(f"**{emojis}**")
+    
+    # ==================== غباء ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غباء$'))
+    async def stupidity(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        
+        percentage = random.randint(60, 100)
+        await event.edit(f"**نسبة غباء {target_name} {percentage}%**")
+    
+    # ==================== تحويل ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تحويل (\d+)'))
+    async def transfer(event):
+        amount = event.pattern_match.group(1)
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        
+        await event.edit(f"**تم إرسال {amount} دولار للشحات {target_name}** 💸")
+    
+    # ==================== رفع شحات ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع شحات$'))
+    async def raf3_shahat(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} شحات** 🥙")
+    
+    # ==================== رفع حمار ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع حمار$'))
+    async def raf3_hmar(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} حمار** 🐴")
+    
+    # ==================== رفع غبي ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع غبي$'))
+    async def raf3_ghaby(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} غبي** 🤪")
+    
+    # ==================== رفع سباك ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع سباك$'))
+    async def raf3_sabbak(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} سباك** 🔧")
+    
+    # ==================== رفع مالك ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع مالك$'))
+    async def raf3_malek(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} مالك** 👑")
+    
+    # ==================== رفع ادمن ====================
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رفع ادمن$'))
+    async def raf3_admin(event):
+        target_name = "المستخدم"
+        if event.is_reply:
+            try:
+                reply = await event.get_reply_message()
+                target_name = await get_user_name(client, reply.sender_id)
+            except:
+                pass
+        elif event.is_private:
+            try:
+                target_name = await get_user_name(client, event.chat_id)
+            except:
+                pass
+        await event.edit(f"**تم رفع {target_name} أدمن** ⭐")
+    
     # ==================== فحص القناة ====================
     async def channel_check():
         while True:
@@ -679,5 +833,5 @@ async def disconnect(phone):
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
-    logger.info("🚀 qgram UserBot - Gemini Edition")
+    logger.info("🚀 qgram UserBot - Fun Edition")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
