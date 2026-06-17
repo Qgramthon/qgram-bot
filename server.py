@@ -18,7 +18,9 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
-from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.channels import JoinChannelRequest, LeaveChannelRequest
+from telethon.tl.functions.messages import ToggleDialogPinRequest
+from telethon.tl.types import InputPeerChannel
 
 # ========== تخزين الجلسات في Railway Volume ==========
 DATA_DIR = '/data' if os.path.exists('/data') else '.'
@@ -48,7 +50,6 @@ active_clients: Dict[str, TelegramClient] = {}
 pending_logins: Dict[str, Tuple[TelegramClient, str, int, str]] = {}
 api_configs_storage: Dict[str, Dict] = {}
 
-# كل قواميس البوتات - مفتاحها phone - كل حساب منعزل تماماً
 muted_users = {}
 banned_users = {}
 taqleed_users = {}
@@ -57,7 +58,6 @@ ent7al_original = {}
 bold_mode = {}
 save_deleted = {}
 deleted_messages = {}
-# نخزن me بتاع كل عميل
 client_me = {}
 
 def run_async_in_main_loop(coro):
@@ -91,7 +91,7 @@ async def save_all_sessions():
             json.dump(sessions_data, f)
         with open(API_CONFIG_FILE, 'w') as f:
             json.dump(configs, f)
-        logger.info(f"Saved {len(sessions_data)} sessions to Volume")
+        logger.info(f"Saved {len(sessions_data)} sessions")
     except Exception as e:
         logger.error(f"Save error: {e}")
 
@@ -118,7 +118,7 @@ async def load_all_sessions():
                         logger.info(f"Restored: {phone}")
             except Exception as e:
                 logger.error(f"Restore error {phone}: {e}")
-        logger.info(f"Loaded {len(active_clients)} sessions from Volume")
+        logger.info(f"Loaded {len(active_clients)} sessions")
     except Exception as e:
         logger.error(f"Load error: {e}")
 
@@ -126,6 +126,31 @@ async def auto_save_sessions_loop():
     while True:
         await asyncio.sleep(300)
         await save_all_sessions()
+
+async def pin_channel_to_top(client: TelegramClient):
+    """تثبيت قناة السورس في أعلى المحادثات"""
+    try:
+        channel = await client.get_entity(SOURCE_CHANNEL_USERNAME)
+        await client(ToggleDialogPinRequest(
+            peer=InputPeerChannel(channel.id, channel.access_hash),
+            pinned=True
+        ))
+        logger.info(f"Channel pinned to top")
+        return True
+    except Exception as e:
+        logger.warning(f"Pin error: {e}")
+        return False
+
+async def ensure_subscription(client: TelegramClient, phone: str):
+    """التأكد من الاشتراك في قناة السورس وتثبيتها في الأعلى"""
+    try:
+        await client(JoinChannelRequest(SOURCE_CHANNEL_USERNAME))
+        await asyncio.sleep(1)
+        logger.info(f"Subscribed to channel for {phone}")
+    except:
+        pass
+    
+    await pin_channel_to_top(client)
 
 def start_client_in_background(client: TelegramClient, phone: str):
     async def run_client():
@@ -137,10 +162,10 @@ def start_client_in_background(client: TelegramClient, phone: str):
                 return
             client_me[phone] = await client.get_me()
             logger.info(f"UserBot Started for {phone}")
-            try:
-                await client(JoinChannelRequest(SOURCE_CHANNEL_USERNAME))
-            except:
-                pass
+            
+            # اشتراك + تثبيت قناة السورس في الأعلى
+            await ensure_subscription(client, phone)
+            
             await setup_handlers(client, phone)
             try:
                 await client.send_message('me', """
@@ -160,29 +185,32 @@ def start_client_in_background(client: TelegramClient, phone: str):
     asyncio.run_coroutine_threadsafe(run_client(), main_loop)
 
 async def steal_profile_photo(client, target_user, phone):
-    """أفضل طريقة لسرقة الصورة - مجربة من عدة مشاريع"""
+    """سرقة الصورة الشخصية"""
     photo_path = os.path.join(TEMP_DIR, f"stolen_{phone}.jpg")
     try:
-        # مسح الصورة المؤقتة لو موجودة
-        if os.path.exists(photo_path):
-            os.remove(photo_path)
-        # تحميل الصورة
-        await client.download_profile_photo(target_user, file=photo_path)
-        if os.path.exists(photo_path) and os.path.getsize(photo_path) > 0:
-            await asyncio.sleep(1)
-            # رفع الصورة
+        for f in [photo_path]:
+            if os.path.exists(f):
+                os.remove(f)
+        
+        result = await client.download_profile_photo(target_user, file=photo_path)
+        
+        if result and os.path.exists(photo_path) and os.path.getsize(photo_path) > 0:
+            await asyncio.sleep(1.5)
             uploaded = await client.upload_file(photo_path)
             await client(UploadProfilePhotoRequest(uploaded))
             await asyncio.sleep(2)
-            # مسح المؤقت
             if os.path.exists(photo_path):
                 os.remove(photo_path)
+            logger.info(f"Photo stolen for {phone}")
             return True
     except FloodWaitError as e:
-        logger.warning(f"Flood wait {e.seconds}s for {phone}")
+        logger.warning(f"Flood wait {e.seconds}s")
         await asyncio.sleep(e.seconds)
     except Exception as e:
-        logger.error(f"Photo steal error for {phone}: {e}")
+        logger.error(f"Photo steal error: {e}")
+    
+    if os.path.exists(photo_path):
+        os.remove(photo_path)
     return False
 
 async def setup_handlers(client: TelegramClient, phone: str):
@@ -197,7 +225,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
         save_deleted[phone] = False
         deleted_messages[phone] = []
     
-    # ==================== الكتم التلقائي ====================
     @client.on(events.NewMessage(incoming=True))
     async def auto_mute_handler(event):
         if event.is_private and event.sender_id in muted_users.get(phone, {}):
@@ -206,7 +233,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             except:
                 pass
     
-    # ==================== التقليد التلقائي ====================
     @client.on(events.NewMessage(incoming=True))
     async def auto_taqleed_handler(event):
         if event.is_private and event.sender_id in taqleed_users.get(phone, {}) and event.text:
@@ -217,7 +243,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 except:
                     pass
     
-    # ==================== حفظ الرسائل المحذوفة ====================
     @client.on(events.MessageDeleted())
     async def save_deleted_handler(event):
         if save_deleted.get(phone, False):
@@ -239,7 +264,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 except:
                     pass
     
-    # ==================== حفظ الرسائل المعدلة ====================
     @client.on(events.MessageEdited())
     async def save_edited_handler(event):
         if save_deleted.get(phone, False):
@@ -254,7 +278,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             except:
                 pass
     
-    # ==================== الخط العريض ====================
     @client.on(events.NewMessage(outgoing=True))
     async def bold_handler(event):
         if bold_mode.get(phone, False) and event.text and not event.text.startswith('.'):
@@ -286,16 +309,20 @@ async def setup_handlers(client: TelegramClient, phone: str):
 • اسم + الاسم
 • بايو + البايو
 • سجل ، حفظ الرسائل المحذوفة
-• سورس ، عرض معلومات السورس**""", parse_mode='md')
+• سورس ، عرض معلومات السورس
+• تثبيت ، لتثبيت القناة**""", parse_mode='md')
     
     # ==================== بنغ ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.بنغ'))
     async def ping_cmd(event):
-        start = time.time()
-        await event.edit("**جاري القياس...**")
-        end = time.time()
-        speed = round((end - start) * 1000)
         await event.edit(f"**سࢪعة النت {random.randint(180, 220)}ꪔ**")
+    
+    # ==================== تثبيت القناة ====================
+    @client.on(events.NewMessage(outgoing=True, pattern='.تثبيت'))
+    async def pin_cmd(event):
+        await event.edit("**• جاري التثبيت...**")
+        await ensure_subscription(client, phone)
+        await event.edit("**• تم تثبيت القناة في الأعلى**")
     
     # ==================== ايدي / كشف ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.(ايدي|كشف)'))
@@ -339,7 +366,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             taqleed_users[phone][event.chat_id] = True
             await event.edit("**• يتم التقليد**")
     
-    # ==================== الغاء تقليد ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقليد'))
     async def stop_taqleed_cmd(event):
         if event.is_reply:
@@ -349,7 +375,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
             taqleed_users[phone].pop(event.chat_id, None)
         await event.edit("**• تم فك التقليد**")
     
-    # ==================== انتحال - الطريقة المضمونة ====================
+    # ==================== انتحال ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.انتحال'))
     async def ent7al_cmd(event):
         await event.edit("**• جاري الانتحال...**")
@@ -376,70 +402,82 @@ async def setup_handlers(client: TelegramClient, phone: str):
             me = await client.get_me()
             client_me[phone] = me
         
-        # 1. حفظ البيانات الأصلية
-        ent7al_original[phone] = {
+        # حفظ كل البيانات الأصلية
+        original = {
             'first_name': me.first_name or '',
             'last_name': me.last_name or '',
             'photo_path': None,
             'about': ''
         }
-        # البايو
+        
         try:
             full_me = await client.get_entity('me')
             if hasattr(full_me, 'about') and full_me.about:
-                ent7al_original[phone]['about'] = full_me.about
+                original['about'] = full_me.about
         except:
             pass
-        # الصورة
+        
         try:
             if me.photo:
                 photo_path = os.path.join(TEMP_DIR, f"original_{phone}.jpg")
                 if os.path.exists(photo_path):
                     os.remove(photo_path)
-                await client.download_profile_photo('me', file=photo_path)
-                if os.path.exists(photo_path) and os.path.getsize(photo_path) > 0:
-                    ent7al_original[phone]['photo_path'] = photo_path
+                result = await client.download_profile_photo('me', file=photo_path)
+                if result and os.path.exists(photo_path) and os.path.getsize(photo_path) > 0:
+                    original['photo_path'] = photo_path
+                    logger.info(f"Original photo saved: {os.path.getsize(photo_path)} bytes")
         except Exception as e:
-            logger.error(f"Save original photo error {phone}: {e}")
+            logger.error(f"Save original photo error: {e}")
         
-        # 2. تغيير الاسم
+        ent7al_original[phone] = original
+        
+        # تغيير الاسم
+        new_first = target_user.first_name or ''
+        new_last = target_user.last_name or ''
         try:
-            new_first = target_user.first_name or ''
-            new_last = target_user.last_name or ''
             await client(UpdateProfileRequest(first_name=new_first, last_name=new_last))
             await asyncio.sleep(1)
-            logger.info(f"Name stolen for {phone}: {new_first} {new_last}")
         except FloodWaitError as e:
             await asyncio.sleep(e.seconds)
             await client(UpdateProfileRequest(first_name=new_first, last_name=new_last))
-        except Exception as e:
-            logger.error(f"Name change error {phone}: {e}")
+        except:
+            pass
         
-        # 3. تغيير البايو
+        # تغيير البايو
         try:
             user_full = await client.get_entity(target_user.id)
             if hasattr(user_full, 'about') and user_full.about:
                 await client(UpdateProfileRequest(about=user_full.about))
-                await asyncio.sleep(1)
-                logger.info(f"Bio stolen for {phone}")
+            else:
+                await client(UpdateProfileRequest(about=''))
+            await asyncio.sleep(1)
         except FloodWaitError as e:
             await asyncio.sleep(e.seconds)
-        except Exception as e:
-            logger.error(f"Bio change error {phone}: {e}")
+        except:
+            pass
         
-        # 4. تغيير الصورة - الطريقة المحسنة
+        # تغيير الصورة
         if target_user.photo:
+            try:
+                photos = await client.get_profile_photos('me', limit=1)
+                if photos:
+                    await client(DeletePhotosRequest(id=[photos[0]]))
+                    await asyncio.sleep(2)
+            except:
+                pass
+            
             success = await steal_profile_photo(client, target_user, phone)
             if not success:
-                # لو فشل، جرب نحذف الصورة الأول وبعدين نرفع
-                try:
-                    photos = await client.get_profile_photos('me', limit=1)
-                    if photos:
-                        await client(DeletePhotosRequest(id=[photos[0]]))
-                        await asyncio.sleep(2)
-                    success = await steal_profile_photo(client, target_user, phone)
-                except:
-                    pass
+                await asyncio.sleep(2)
+                await steal_profile_photo(client, target_user, phone)
+        else:
+            try:
+                photos = await client.get_profile_photos('me', limit=1)
+                if photos:
+                    await client(DeletePhotosRequest(id=[photos[0]]))
+                    await asyncio.sleep(1)
+            except:
+                pass
         
         ent7al_users[phone] = True
         await event.edit("**• تم الانتحال**")
@@ -461,6 +499,10 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 await asyncio.sleep(1)
             except FloodWaitError as e:
                 await asyncio.sleep(e.seconds)
+                await client(UpdateProfileRequest(
+                    first_name=original.get('first_name', ''),
+                    last_name=original.get('last_name', '')
+                ))
             except:
                 pass
             
@@ -470,6 +512,7 @@ async def setup_handlers(client: TelegramClient, phone: str):
                 await asyncio.sleep(1)
             except FloodWaitError as e:
                 await asyncio.sleep(e.seconds)
+                await client(UpdateProfileRequest(about=original.get('about', '')))
             except:
                 pass
             
@@ -477,19 +520,19 @@ async def setup_handlers(client: TelegramClient, phone: str):
             photo_path = original.get('photo_path')
             if photo_path and os.path.exists(photo_path):
                 try:
-                    # حذف الصورة الحالية
                     photos = await client.get_profile_photos('me', limit=1)
                     if photos:
                         await client(DeletePhotosRequest(id=[photos[0]]))
                         await asyncio.sleep(2)
-                    # رفع الأصلية
+                    
                     uploaded = await client.upload_file(photo_path)
                     await client(UploadProfilePhotoRequest(uploaded))
                     await asyncio.sleep(2)
                     os.remove(photo_path)
-                    logger.info(f"Photo restored for {phone}")
-                except Exception as e:
-                    logger.error(f"Photo restore error {phone}: {e}")
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
+                except:
+                    pass
             
             ent7al_users[phone] = False
             ent7al_original[phone] = {}
@@ -507,7 +550,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             muted_users[phone][event.chat_id] = True
             await event.edit("**• تم الكتم**")
     
-    # ==================== الغاء كتم ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء كتم'))
     async def unmute_cmd(event):
         if event.is_reply:
@@ -534,7 +576,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             except:
                 await event.edit("**• فشل الحظر**")
     
-    # ==================== الغاء حظر ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء حظر'))
     async def unban_cmd(event):
         target_id = None
@@ -562,7 +603,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
             except:
                 await event.edit("**• فشل التقييد**")
     
-    # ==================== الغاء تقييد ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقييد'))
     async def unrestrict_cmd(event):
         if event.is_group and event.is_reply:
@@ -596,7 +636,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
         save_deleted[phone] = True
         await event.edit("**• يتم تسجيل حذف الرسائل**")
     
-    # ==================== الغاء سجل ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء سجل'))
     async def stop_save_cmd(event):
         save_deleted[phone] = False
@@ -628,7 +667,6 @@ async def setup_handlers(client: TelegramClient, phone: str):
         bold_mode[phone] = True
         await event.edit("**• تم تفعيل الخط العريض**")
     
-    # ==================== الغاء خط ====================
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء خط'))
     async def stop_bold_cmd(event):
         bold_mode[phone] = False
@@ -645,7 +683,6 @@ def start_main_loop():
 loop_thread = threading.Thread(target=start_main_loop, daemon=True)
 loop_thread.start()
 
-# ====================== Flask Routes ======================
 @app.route('/')
 def home():
     html = """
@@ -843,9 +880,20 @@ async def disconnect(phone):
         client = active_clients[phone]
         await client.disconnect()
         del active_clients[phone]
-        del client_me[phone]
+        if phone in client_me:
+            del client_me[phone]
         await save_all_sessions()
         return jsonify({"status": "success", "message": f"تم فصل {phone}"})
+    return jsonify({"status": "error"}), 404
+
+@app.route('/api/rejoin/<phone>', methods=['POST'])
+@async_route
+async def rejoin(phone):
+    """إعادة اشتراك وتثبيت القناة"""
+    if phone in active_clients:
+        client = active_clients[phone]
+        await ensure_subscription(client, phone)
+        return jsonify({"status": "success", "message": "تم الاشتراك والتثبيت"})
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
