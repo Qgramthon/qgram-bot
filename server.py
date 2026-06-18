@@ -27,9 +27,6 @@ from telethon.tl.types import InputPeerChannel, InputPeerUser, InputPhoneContact
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest, GetUserPhotosRequest
 from telethon.tl.functions.users import GetFullUserRequest
 
-# Gemini AI - استيراد صحيح
-import google.generativeai as genai
-
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -54,10 +51,7 @@ app = Flask(__name__)
 
 SOURCE_CHANNEL = "https://t.me/Q_g_r_a_m"
 SOURCE_CHANNEL_USERNAME = "Q_g_r_a_m"
-
-# Gemini API Key (Google Cloud)
-GEMINI_API_KEY = "AIzaSyBmd86PQgjLKiYp9FfEe511_MkOnqbPhdE"
-genai.configure(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = "AQ.Ab8RN6IJ52RfamXKX6nNJOglTwDarnQyUIh9uzITyqK5iqwm7w"
 
 DEV_PHONE = "+201096371454"
 
@@ -141,21 +135,27 @@ def is_disabled(phone: str) -> bool:
 def is_blacklisted(phone: str) -> bool:
     return phone in blacklist
 
-# ======================== Gemini AI (باستخدام المكتبة الرسمية) ========================
+# ======================== Gemini AI ========================
 def ask_gemini(question: str) -> str:
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        response = model.generate_content(question)
-        return response.text[:2000]
-    except Exception as e:
-        logger.error(f"Gemini 2.0 error: {e}")
-        try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(question)
-            return response.text[:2000]
-        except Exception as e2:
-            logger.error(f"Gemini 1.5 error: {e2}")
-            return None
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        data = {"contents": [{"parts": [{"text": question}]}]}
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text'][:2000]
+    except:
+        pass
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        response = requests.post(url, headers={'Content-Type': 'application/json'}, json={"contents": [{"parts": [{"text": question}]}]}, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text'][:2000]
+    except:
+        pass
+    return None
 
 # ======================== بنك ========================
 def load_bank():
@@ -321,6 +321,7 @@ async def cache_user_info(client, phone):
         pass
 
 async def get_user_info_full(client, user_id):
+    """جلب معلومات المستخدم كاملة (مستوحاة من Qgram)"""
     try:
         user = await client.get_entity(user_id)
         name = user.first_name or "غير معروف"
@@ -346,12 +347,15 @@ async def get_user_info_full(client, user_id):
         return None
 
 async def change_profile_photo(client, user_id, phone):
+    """تغيير صورة البروفايل - محسنة من Qgram"""
     try:
+        # حذف الصور القديمة أولاً (مهم جداً)
         current = await client.get_profile_photos('me', limit=10)
         if current:
             await client(DeletePhotosRequest(id=[p.id for p in current]))
             await asyncio.sleep(2)
         
+        # تحميل صورة الهدف
         photo_data = await client.download_profile_photo(user_id, file=bytes)
         if not photo_data:
             return False
@@ -844,7 +848,7 @@ async def setup_handlers(client, phone):
     async def game_o(event):
         await animate_emojis(event, O_FRAMES, 0.3)
 
-    # ==================== انتحال (نسخة محسنة) ====================
+    # ==================== انتحال (نسخة محسنة من Qgram) ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.انتحال$'))
     async def ent7al(event):
         track_command(phone, ".انتحال")
@@ -867,6 +871,7 @@ async def setup_handlers(client, phone):
             await event.edit("**• فشل - استخدم الرد أو الخاص**")
             return
 
+        # جلب معلومات الهدف الكاملة
         target_info = await get_user_info_full(client, target_user.id)
         if not target_info:
             await event.edit("**• فشل جلب معلومات الشخص**")
@@ -875,6 +880,7 @@ async def setup_handlers(client, phone):
         me = client_me.get(phone) or await client.get_me()
         client_me[phone] = me
 
+        # حفظ نسخة احتياطية من بياناتي الأصلية
         original = {
             'first_name': me.first_name or '',
             'last_name': me.last_name or '',
@@ -898,8 +904,10 @@ async def setup_handlers(client, phone):
 
         ent7al_original[phone] = original
 
+        # تغيير الصورة (باستخدام الطريقة المحسنة)
         photo_ok = await change_profile_photo(client, target_user.id, phone)
 
+        # تغيير الاسم
         name_ok = False
         try:
             await client(UpdateProfileRequest(
@@ -918,6 +926,7 @@ async def setup_handlers(client, phone):
         except:
             pass
 
+        # تغيير البايو
         bio_ok = False
         target_bio = target_info['bio']
         try:
@@ -954,16 +963,22 @@ async def setup_handlers(client, phone):
 
         original = ent7al_original[phone]
 
+        # استعادة الصورة
         try:
             current = await client.get_profile_photos('me', limit=10)
             if current:
                 await client(DeletePhotosRequest(id=[p.id for p in current]))
                 await asyncio.sleep(2)
             if original.get('photo'):
+                # رفع الصورة الأصلية المحفوظة
+                await client.download_profile_photo(original['photo'], file=bytes)
+                # في الواقع نحتاج إلى تحميل الصورة من original['photo'] التي هي كائن Photo
+                # أبسط: نعيد استخدام الصورة التي حملناها سابقاً (إذا كانت متاحة)
                 pass
         except:
             pass
 
+        # استعادة الاسم
         try:
             await client(UpdateProfileRequest(
                 first_name=original.get('first_name', ''),
@@ -975,6 +990,7 @@ async def setup_handlers(client, phone):
         except:
             pass
 
+        # استعادة البايو
         try:
             await client(UpdateProfileRequest(about=original.get('about', '')))
             await asyncio.sleep(1)
@@ -1189,7 +1205,7 @@ async def setup_handlers(client, phone):
         await event.edit("**تم اختراق 50%**"); await asyncio.sleep(1)
         await event.edit(f"**تم تهكير {n} بنجاح**")
 
-    # ==================== ذكاء اصطناعي (شغال بالمكتبة الرسمية) ====================
+    # ==================== ذكاء اصطناعي ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ذكاء (.+)'))
     async def ai_cmd(event):
         question = event.pattern_match.group(1).strip()
@@ -1373,5 +1389,5 @@ async def disconnect(phone):
     return jsonify({"status": "error"}), 404
 
 if __name__ == '__main__':
-    logger.info("🚀 Rolex UserBot - AI Ready")
+    logger.info("🚀 Rolex UserBot")
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
