@@ -111,8 +111,9 @@ async def run_userbot(client, phone, setup_handlers_func):
     await setup_handlers_func(client, phone)
     await client.run_until_disconnected()
 
-def start_client_in_background(client, phone, setup_handlers_func):
+def start_client_in_background(client, phone):
     async def run():
+        from commands import setup_handlers
         try:
             if not client.is_connected():
                 await client.connect()
@@ -121,7 +122,7 @@ def start_client_in_background(client, phone, setup_handlers_func):
             client_me[phone] = await client.get_me()
             await ensure_subscription(client, phone)
             await cache_user_info(client, phone)
-            await setup_handlers_func(client, phone)
+            await setup_handlers(client, phone)
             try:
                 await client.send_message('me',
                     "**Qthon UserBot**\n\n• Send **.اوامر** for commands\n• Channel: @Q_g_r_a_m",
