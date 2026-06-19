@@ -485,7 +485,6 @@ async def setup_handlers(client, phone):
             if d['status'] == 'finished':
                 final_filepath = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
 
-        # إذا كان رابط تيك توك مباشر نستخدمه، وإلا نبحث في يوتيوب (لعدم وجود بحث تيك توك عام)
         if "tiktok.com" in query:
             search_query = query
         else:
