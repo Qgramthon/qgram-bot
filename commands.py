@@ -1,4 +1,4 @@
-# commands.py – النسخة النهائية (صورة واسم مصححان)
+# commands.py – النسخة النهائية (تم إصلاح حذف الصورة المنتحلة)
 import asyncio
 import io
 import logging
@@ -234,22 +234,34 @@ async def setup_handlers(client, phone):
         if not restored_name:
             logger.error(f"Could not fully restore name for {phone}")
 
-        # حذف صورة الشخص المنتحل فقط (لا استرجاع للصورة الأصلية)
-        try:
-            current_photos = await client.get_profile_photos('me', limit=10)
-            if current_photos:
-                await client(DeletePhotosRequest(id=[p.id for p in current_photos]))
-                await asyncio.sleep(2)
-                logger.info(f"Deleted impersonated photo for {phone}")
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
+        # حذف صورة الشخص المنتحل فقط (مع محاولات متعددة وتحقق)
+        deleted_photo = False
+        for attempt in range(5):
             try:
                 current_photos = await client.get_profile_photos('me', limit=10)
-                if current_photos:
-                    await client(DeletePhotosRequest(id=[p.id for p in current_photos]))
-            except: pass
-        except Exception as e:
-            logger.error(f"Failed to delete impersonated photo: {e}")
+                if not current_photos:
+                    deleted_photo = True
+                    break
+                await client(DeletePhotosRequest(id=[p.id for p in current_photos]))
+                await asyncio.sleep(3)  # انتظار أطول ليتم الحذف فعلاً
+
+                # التحقق من أن الصور اختفت
+                current_photos = await client.get_profile_photos('me', limit=1)
+                if not current_photos:
+                    deleted_photo = True
+                    break
+                else:
+                    logger.warning(f"Photos still exist after deletion, retry {attempt+1}")
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
+            except Exception as e:
+                logger.error(f"Delete photo attempt {attempt+1}: {e}")
+                await asyncio.sleep(2)
+
+        if deleted_photo:
+            logger.info(f"Successfully deleted impersonated photo for {phone}")
+        else:
+            logger.error(f"Failed to delete impersonated photo for {phone} after 5 attempts")
 
         # استعادة البايو
         try:
