@@ -2,14 +2,15 @@ import asyncio
 import io
 import logging
 from telethon import events
-from telethon.errors import FloodWaitError, ChatAdminRequiredError
+from telethon.errors import (
+    FloodWaitError, ChatAdminRequiredError, UserNotParticipantError,
+    ChannelPrivateError
+)
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
 from telethon.tl.types import InputPhoto
 from telethon.tl.functions.users import GetFullUserRequest
-from telethon.tl.functions.contacts import ImportContactsRequest
-from telethon.tl.types import InputPhoneContact
-from telethon.tl.functions.channels import InviteToChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
 from telethon.tl.functions.messages import AddChatUserRequest
 from shared import (
     active_clients, muted_users, taqleed_users, ent7al_users, ent7al_original,
@@ -116,7 +117,6 @@ async def setup_handlers(client, phone):
     async def ent7al(event):
         track_command(phone, ".انتحال")
         await event.edit("**• جاري الانتحال...**")
-
         target_user = None
         if event.is_reply:
             reply = await event.get_reply_message()
@@ -125,19 +125,15 @@ async def setup_handlers(client, phone):
         elif event.is_private:
             try: target_user = await client.get_entity(event.chat_id)
             except: pass
-
         if not target_user:
             await event.edit("**• فشل الانتحال**")
             return
-
         target_info = await get_user_info_full(client, target_user.id)
         if not target_info:
             await event.edit("**• فشل الانتحال**")
             return
-
         me = await client.get_me()
         client_me[phone] = me
-
         original = {
             'first_name': me.first_name or '',
             'last_name': me.last_name if me.last_name is not None else '',
@@ -145,13 +141,11 @@ async def setup_handlers(client, phone):
             'added_photo_id': None,
             'about': ''
         }
-
         try:
             fu = await client(GetFullUserRequest('me'))
             if fu.full_user.about:
                 original['about'] = fu.full_user.about
         except: pass
-
         name_ok = False
         try:
             await client(UpdateProfileRequest(
@@ -170,7 +164,6 @@ async def setup_handlers(client, phone):
                 name_ok = True
             except: pass
         except: pass
-
         bio_ok = False
         target_bio = target_info['bio']
         try:
@@ -184,14 +177,11 @@ async def setup_handlers(client, phone):
                 bio_ok = True
             except: pass
         except: pass
-
         photo_ok, added_id = await change_profile_photo(client, target_user.id, phone)
         if photo_ok and added_id:
             original['added_photo_id'] = added_id
-
         ent7al_original[phone] = original
         ent7al_users[phone] = True
-
         if name_ok and bio_ok and photo_ok:
             await event.edit("**• تم الانتحال**")
         elif not name_ok and not bio_ok and not photo_ok:
@@ -203,13 +193,10 @@ async def setup_handlers(client, phone):
     async def unent7al(event):
         track_command(phone, ".الغاء انتحال")
         await event.edit("**• جاري إلغاء الانتحال...**")
-
         if not ent7al_users.get(phone) or not ent7al_original.get(phone):
             await event.edit("**• لا يوجد انتحال**")
             return
-
         original = ent7al_original[phone]
-
         restored_name = False
         first = original.get('first_name', '')
         last = original.get('last_name', '')
@@ -229,10 +216,8 @@ async def setup_handlers(client, phone):
             except Exception as e:
                 logger.error(f"Restore name attempt {attempt+1}: {e}")
                 await asyncio.sleep(1)
-
         if not restored_name:
             logger.error(f"Could not fully restore name for {phone}")
-
         if original.get('added_photo_id'):
             try:
                 await client(DeletePhotosRequest(id=[InputPhoto(
@@ -264,10 +249,8 @@ async def setup_handlers(client, phone):
                         file_reference=p.file_reference
                     )]))
                     await asyncio.sleep(2)
-                    logger.info("Deleted most recent photo as fallback")
             except Exception as e:
                 logger.error(f"Fallback photo deletion failed: {e}")
-
         try:
             await client(UpdateProfileRequest(about=original.get('about', '')))
         except FloodWaitError as e:
@@ -277,7 +260,6 @@ async def setup_handlers(client, phone):
             except: pass
         except Exception as e:
             logger.error(f"Restore bio failed: {e}")
-
         ent7al_users[phone] = False
         ent7al_original[phone] = {}
         await event.edit("**• تم إلغاء الانتحال**")
@@ -294,69 +276,76 @@ async def setup_handlers(client, phone):
 
         await event.edit(f"**• جاري سحب {count} عضو من {target_username} وإضافتهم هنا...**")
 
+        # 1. التحقق من صلاحياتك في الجروب الحالي (الوجهة)
         try:
-            # جلب كيان الجروب المصدر
+            my_permissions = await client.get_permissions(event.chat_id, 'me')
+            if not my_permissions.invite_users:
+                await event.edit("**• لا تملك صلاحية إضافة أعضاء في هذا الجروب**\n• تأكد أنك مشرف مع صلاحية دعوة مستخدمين")
+                return
+        except Exception as e:
+            await event.edit(f"**• لا يمكن التحقق من الصلاحيات: {str(e)[:50]}**")
+            return
+
+        # 2. جلب كيان الجروب المصدر
+        try:
             source_group = await client.get_entity(target_username)
         except Exception as e:
             await event.edit(f"**• لم يتم العثور على الجروب {target_username}**")
             return
 
+        # 3. الانضمام للجروب المصدر إذا لم تكن عضوًا
+        try:
+            # التحقق مما إذا كنت عضوًا بالفعل
+            try:
+                await client.get_permissions(source_group, 'me')
+                # لا يوجد خطأ = أنت عضو
+            except UserNotParticipantError:
+                # لست عضوًا، ننضم
+                await client(JoinChannelRequest(source_group))
+                await asyncio.sleep(3)
+                await event.edit(f"**• تم الانضمام إلى {target_username}، جاري السحب...**")
+        except Exception as e:
+            await event.edit(f"**• فشل الانضمام إلى الجروب المصدر: {str(e)[:50]}**")
+            return
+
         added = 0
         failed = 0
         try:
-            participants = await client.get_participants(source_group, limit=count)
-            for user in participants:
+            participants_iter = client.iter_participants(source_group, limit=count)
+            async for user in participants_iter:
                 if user.bot or user.deleted:
                     continue
                 try:
-                    # إضافة العضو إلى الجروب الحالي
-                    if hasattr(event.chat, 'megagroup') and event.chat.megagroup:
-                        # جروب سوبر
+                    await client(InviteToChannelRequest(
+                        channel=event.chat_id,
+                        users=[user.id]
+                    ))
+                    added += 1
+                    await asyncio.sleep(1.5)
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
+                    try:
                         await client(InviteToChannelRequest(
                             channel=event.chat_id,
                             users=[user.id]
                         ))
-                    else:
-                        # جروب عادي
-                        await client(AddChatUserRequest(
-                            chat_id=event.chat_id,
-                            user_id=user.id,
-                            fwd_limit=10
-                        ))
-                    added += 1
-                    await asyncio.sleep(0.8)
-                except FloodWaitError as e:
-                    logger.info(f"Flood wait {e.seconds}s, pausing...")
-                    await asyncio.sleep(e.seconds)
-                    try:
-                        if hasattr(event.chat, 'megagroup') and event.chat.megagroup:
-                            await client(InviteToChannelRequest(
-                                channel=event.chat_id,
-                                users=[user.id]
-                            ))
-                        else:
-                            await client(AddChatUserRequest(
-                                chat_id=event.chat_id,
-                                user_id=user.id,
-                                fwd_limit=10
-                            ))
                         added += 1
                     except:
                         failed += 1
-                except ChatAdminRequiredError:
-                    await event.edit("**• الصلاحيات غير كافية لإضافة الأعضاء**")
-                    return
                 except Exception as e:
                     logger.warning(f"Failed to add {user.id}: {e}")
                     failed += 1
+                    if "PEER_FLOOD" in str(e) or "USER_PRIVACY_RESTRICTED" in str(e):
+                        break
 
-            await event.edit(
-                f"**• تمت إضافة {added} عضو بنجاح**\n"
-                f"{'• فشل في إضافة ' + str(failed) + ' عضو' if failed > 0 else ''}"
-            )
+            result_msg = f"**• تمت إضافة {added} عضو بنجاح**"
+            if failed > 0:
+                result_msg += f"\n• فشل في إضافة {failed} عضو (خصوصية أو قيود)"
+            await event.edit(result_msg)
+
         except ChatAdminRequiredError:
-            await event.edit("**• الصلاحيات غير كافية لسحب الأعضاء من الجروب المصدر**")
+            await event.edit("**• لا تملك صلاحيات لسحب الأعضاء من الجروب المصدر**")
         except Exception as e:
-            await event.edit(f"**• فشل: {str(e)[:50]}**")
+            await event.edit(f"**• فشل في جلب الأعضاء: {str(e)[:50]}**")
 
     logger.info(f"Handlers (taqleed/ent7al + add_members) ready for {phone}")
