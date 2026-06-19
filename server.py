@@ -103,13 +103,13 @@ async def handle_setup(event):
             client = TelegramClient(StringSession(), data['api_id'], data['api_hash'])
             await client.connect()
             
-            # طلب الكود
-            result = await client.send_code_request(phone, force_sms=True)
+            # طلب الكود - بدون force_sms (عن طريق إشعار التطبيق)
+            result = await client.send_code_request(phone)
             
             data['client'] = client
             data['hash'] = result.phone_code_hash
             data['state'] = 'code'
-            await event.respond("📲 **تم إرسال كود التحقق عبر SMS. أرسله فوراً:**")
+            await event.respond("📲 **تم إرسال كود التحقق. أرسله فوراً:**")
             
         except FloodWaitError as e:
             minutes = e.seconds // 60
@@ -188,7 +188,8 @@ async def resend_code(event):
             await client.connect()
             data['client'] = client
         
-        result = await data['client'].send_code_request(data['phone'], force_sms=True)
+        # بدون force_sms (عن طريق إشعار التطبيق)
+        result = await data['client'].send_code_request(data['phone'])
         data['hash'] = result.phone_code_hash
         
         await event.respond("📲 **تم إرسال كود جديد. أرسله فوراً:**")
@@ -212,8 +213,6 @@ async def finish_setup(event, uid):
     if await start_userbot(phone, session_str, api_id, api_hash):
         await event.respond(
             "✅ **تم تنصيب حسابك بنجاح!**\n\n"
-            "يمكنك الآن استخدام حسابك كـ UserBot.\n"
-            "ارسل `.اوامر` من حسابك لرؤية قائمة الأوامر.\n\n"
             "⚜️ **Rolex Telethon**"
         )
     else:
