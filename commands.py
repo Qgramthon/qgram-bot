@@ -1,4 +1,3 @@
-# commands.py – النسخة النهائية (تم إصلاح حذف الصورة المنتحلة)
 import asyncio
 import io
 import logging
@@ -6,6 +5,7 @@ from telethon import events
 from telethon.errors import FloodWaitError
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.photos import UploadProfilePhotoRequest, DeletePhotosRequest
+from telethon.tl.types import InputPhoto
 from telethon.tl.functions.users import GetFullUserRequest
 from shared import (
     active_clients, muted_users, taqleed_users, ent7al_users, ent7al_original,
@@ -234,7 +234,7 @@ async def setup_handlers(client, phone):
         if not restored_name:
             logger.error(f"Could not fully restore name for {phone}")
 
-        # حذف صورة الشخص المنتحل فقط (مع محاولات متعددة وتحقق)
+        # حذف صورة الشخص المنتحل فقط (مع استخدام InputPhoto الصحيح)
         deleted_photo = False
         for attempt in range(5):
             try:
@@ -242,8 +242,18 @@ async def setup_handlers(client, phone):
                 if not current_photos:
                     deleted_photo = True
                     break
-                await client(DeletePhotosRequest(id=[p.id for p in current_photos]))
-                await asyncio.sleep(3)  # انتظار أطول ليتم الحذف فعلاً
+
+                # تحويل الصور إلى كائنات InputPhoto المطلوبة
+                input_photos = []
+                for p in current_photos:
+                    input_photos.append(InputPhoto(
+                        id=p.id,
+                        access_hash=p.access_hash,
+                        file_reference=p.file_reference
+                    ))
+
+                await client(DeletePhotosRequest(id=input_photos))
+                await asyncio.sleep(3)
 
                 # التحقق من أن الصور اختفت
                 current_photos = await client.get_profile_photos('me', limit=1)
