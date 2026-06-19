@@ -4,4 +4,3 @@ cryptg
 gunicorn
 Pillow
 requests
-google-generativeai
