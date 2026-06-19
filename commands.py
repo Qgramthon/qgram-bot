@@ -35,11 +35,8 @@ async def get_user_info_full(client, user_id):
         return None
 
 async def change_profile_photo(client, user_id, phone):
+    """تغيير الصورة دون حذف القديمة (الرفع يستبدل الصورة الحالية تلقائياً)"""
     try:
-        current = await client.get_profile_photos('me', limit=10)
-        if current:
-            await client(DeletePhotosRequest(id=[p.id for p in current]))
-            await asyncio.sleep(3)
         bio = io.BytesIO()
         await client.download_profile_photo(user_id, file=bio)
         bio.seek(0)
@@ -47,6 +44,19 @@ async def change_profile_photo(client, user_id, phone):
         await client(UploadProfilePhotoRequest(file=uploaded))
         await asyncio.sleep(2)
         return True
+    except FloodWaitError as e:
+        logger.warning(f"Flood wait {e.seconds}s during photo change for {phone}")
+        await asyncio.sleep(e.seconds)
+        try:
+            bio = io.BytesIO()
+            await client.download_profile_photo(user_id, file=bio)
+            bio.seek(0)
+            uploaded = await client.upload_file(bio, file_name="photo.jpg")
+            await client(UploadProfilePhotoRequest(file=uploaded))
+            await asyncio.sleep(2)
+            return True
+        except:
+            return False
     except Exception as e:
         logger.error(f"Photo change failed for {phone}: {e}")
         return False
@@ -117,13 +127,15 @@ async def setup_handlers(client, phone):
             await event.edit("**• فشل الانتحال**")
             return
 
-        me = client_me.get(phone) or await client.get_me()
+        # جلب بياناتي الحالية من السيرفر مباشرة لضمان الدقة
+        me = await client.get_me()
         client_me[phone] = me
 
+        # حفظ نسخة أصلية كاملة
         original = {
             'first_name': me.first_name or '',
-            'last_name': me.last_name or '',
-            'photo': None,
+            'last_name': me.last_name or '',   # مهم لاستعادة الاسم بدقة
+            'photo_bytes': None,
             'about': ''
         }
 
@@ -134,13 +146,17 @@ async def setup_handlers(client, phone):
         except: pass
 
         try:
-            my_photos = await client.get_profile_photos('me', limit=1)
-            if my_photos:
-                original['photo'] = my_photos[0]
-        except: pass
+            if me.photo:
+                bio_orig = io.BytesIO()
+                await client.download_profile_photo('me', file=bio_orig)
+                bio_orig.seek(0)
+                original['photo_bytes'] = bio_orig.getvalue()
+        except Exception as e:
+            logger.warning(f"Could not backup original photo: {e}")
 
         ent7al_original[phone] = original
 
+        # تغيير الاسم
         name_ok = False
         try:
             await client(UpdateProfileRequest(
@@ -160,6 +176,7 @@ async def setup_handlers(client, phone):
             except: pass
         except: pass
 
+        # تغيير البايو
         bio_ok = False
         target_bio = target_info['bio']
         try:
@@ -174,6 +191,7 @@ async def setup_handlers(client, phone):
             except: pass
         except: pass
 
+        # تغيير الصورة (رفع مباشر)
         photo_ok = await change_profile_photo(client, target_user.id, phone)
 
         ent7al_users[phone] = True
@@ -196,42 +214,66 @@ async def setup_handlers(client, phone):
 
         original = ent7al_original[phone]
 
-        if original.get('photo'):
+        # استعادة الاسم (3 محاولات لضمان النجاح)
+        restored_name = False
+        first = original.get('first_name', '')
+        last = original.get('last_name', '')
+        for attempt in range(3):
+            try:
+                await client(UpdateProfileRequest(
+                    first_name=first,
+                    last_name=last
+                ))
+                await asyncio.sleep(2)
+                restored_name = True
+                break
+            except FloodWaitError as e:
+                logger.info(f"Flood wait {e.seconds}s while restoring name")
+                await asyncio.sleep(e.seconds)
+            except Exception as e:
+                logger.error(f"Restore name attempt {attempt+1} failed: {e}")
+                await asyncio.sleep(2)
+
+        if not restored_name:
+            logger.error(f"Could not restore name for {phone} after 3 attempts")
+
+        # استعادة الصورة الأصلية من البايتات
+        if original.get('photo_bytes'):
+            try:
+                bio = io.BytesIO(original['photo_bytes'])
+                bio.seek(0)
+                uploaded = await client.upload_file(bio, file_name="original.jpg")
+                await client(UploadProfilePhotoRequest(file=uploaded))
+                await asyncio.sleep(1)
+                logger.info(f"Original photo restored")
+            except FloodWaitError as e:
+                await asyncio.sleep(e.seconds)
+                try:
+                    bio = io.BytesIO(original['photo_bytes'])
+                    bio.seek(0)
+                    uploaded = await client.upload_file(bio, file_name="original.jpg")
+                    await client(UploadProfilePhotoRequest(file=uploaded))
+                except: pass
+            except Exception as e:
+                logger.error(f"Restore photo failed: {e}")
+        else:
+            # لا توجد صورة أصلية، نحذف الصورة الحالية إن وجدت
             try:
                 current = await client.get_profile_photos('me', limit=10)
                 if current:
                     await client(DeletePhotosRequest(id=[p.id for p in current]))
-                    await asyncio.sleep(3)
-                bio = io.BytesIO()
-                await client.download_profile_photo(original['photo'], file=bio)
-                bio.seek(0)
-                uploaded = await client.upload_file(bio, file_name="orig.jpg")
-                await client(UploadProfilePhotoRequest(file=uploaded))
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.error(f"Restore photo failed: {e}")
+                    await asyncio.sleep(2)
+            except: pass
 
-        try:
-            await client(UpdateProfileRequest(
-                first_name=original.get('first_name', ''),
-                last_name=original.get('last_name', '')
-            ))
-            await asyncio.sleep(1)
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
-            await client(UpdateProfileRequest(
-                first_name=original.get('first_name', ''),
-                last_name=original.get('last_name', '')
-            ))
-        except Exception as e:
-            logger.error(f"Restore name failed: {e}")
-
+        # استعادة البايو
         try:
             await client(UpdateProfileRequest(about=original.get('about', '')))
             await asyncio.sleep(1)
         except FloodWaitError as e:
             await asyncio.sleep(e.seconds)
-            await client(UpdateProfileRequest(about=original.get('about', '')))
+            try:
+                await client(UpdateProfileRequest(about=original.get('about', '')))
+            except: pass
         except Exception as e:
             logger.error(f"Restore bio failed: {e}")
 
