@@ -75,9 +75,8 @@ bot = TelegramClient(f'bot_session_{uuid.uuid4().hex[:6]}', API_ID, API_HASH)
 active_clients = {}
 client_me = {}
 
-# نظام التنصيب: كل مستخدم له جلسة منفصلة تماماً
-# {user_id: {'state': 'api_id', 'api_id': ..., 'api_hash': ..., 'phone': ..., 'client': ..., 'hash': ...}}
-# الـ client يفضل متصل طول عملية التنصيب (زي الموقع)
+# pending_logins = {user_id: {'state': ..., 'client': TelegramClient, 'hash': ..., ...}}
+# الـ client يفضل متصل ومفتوح طول فترة التنصيب (نفس منطق الموقع)
 pending_logins = {}
 
 muted_users = {}
@@ -964,7 +963,8 @@ async def setup_handlers(client, phone):
 
     logger.info(f"✅ تم تحميل جميع الأوامر لـ {phone}")
 
-# ======================== بوت التنصيب (مطابق لطريقة الموقع) ========================
+# ======================== بوت التنصيب (مستوحى من طريقة الموقع) ========================
+# الفكرة: الـ client يفضل متصل طول فترة التنصيب ولا يتم إعادة إنشائه أبداً
 @bot.on(events.NewMessage(pattern='/ping'))
 async def bot_ping(event):
     await event.respond('Pong!')
@@ -975,43 +975,18 @@ async def bot_start(event):
     await event.respond(
         "🜲 **مرحباً بك في بوت تنصيب Rolex Telethon**\n\n"
         "لتنصيب حسابك، أرسل:\n"
-        "`/setup` واتبع التعليمات.\n"
-        "إذا كان الكود منتهي الصلاحية، أرسل `/resend`\n\n"
+        "`/setup` واتبع التعليمات.\n\n"
         "للاستفسار: @Q_g_r_a_m",
         parse_mode='md'
     )
 
 @bot.on(events.NewMessage(pattern='/setup'))
 async def setup_init(event):
-    # إنشاء جلسة جديدة تماماً للمستخدم
     pending_logins[event.sender_id] = {
         'state': 'api_id',
         'created_at': time.time()
     }
     await event.respond("📝 **أرسل API ID الخاص بك:**")
-
-@bot.on(events.NewMessage(pattern='/resend'))
-async def resend_code(event):
-    uid = event.sender_id
-    if uid not in pending_logins or 'phone' not in pending_logins[uid]:
-        await event.respond("⚠️ لم يتم بدء عملية التسجيل. أرسل /setup أولاً.")
-        return
-    data = pending_logins[uid]
-    try:
-        # نستخدم نفس الـ client المتصل (إذا كان لسه شغال)
-        if 'client' in data and data['client'].is_connected():
-            result = await data['client'].send_code_request(data['phone'], force_sms=False)
-        else:
-            # لو الـ client مش متصل، نعمل واحد جديد
-            client = TelegramClient(StringSession(), data['api_id'], data['api_hash'])
-            await client.connect()
-            result = await client.send_code_request(data['phone'], force_sms=False)
-            data['client'] = client
-        
-        data['hash'] = result.phone_code_hash
-        await event.respond("📲 **تم إرسال كود جديد عن طريق تطبيق تيليجرام.**\nأرسله فوراً:")
-    except Exception as e:
-        await event.respond(f"❌ خطأ: {e}")
 
 @bot.on(events.NewMessage())
 async def handle_setup(event):
@@ -1040,11 +1015,12 @@ async def handle_setup(event):
         phone = event.text.strip()
         data['phone'] = phone
         try:
-            # إنشاء عميل جديد والإبقاء عليه متصلاً (زي الموقع بالظبط)
+            # إنشاء عميل جديد - هذا العميل سيبقى متصلاً طوال فترة التنصيب
             client = TelegramClient(StringSession(), data['api_id'], data['api_hash'])
             await client.connect()
-            result = await client.send_code_request(phone, force_sms=False)
-            data['client'] = client  # الـ client يفضل متصل
+            # إرسال كود التحقق - نستخدم force_sms=True لضمان وصول الكود
+            result = await client.send_code_request(phone, force_sms=True)
+            data['client'] = client
             data['hash'] = result.phone_code_hash
             data['state'] = 'code'
             await event.respond("📲 **تم إرسال كود التحقق. أرسله فوراً:**")
@@ -1055,24 +1031,12 @@ async def handle_setup(event):
     elif state == 'code':
         code = event.text.strip()
         try:
-            # نستخدم نفس الـ client المتصل (بدون إعادة إنشاء)
+            # نستخدم نفس الـ client المتصل - لا نعيد إنشائه أبداً
             await data['client'].sign_in(phone=data['phone'], code=code, phone_code_hash=data['hash'])
         except SessionPasswordNeededError:
             data['state'] = 'password'
             await event.respond("🔐 **الحساب محمي بكلمة مرور.**\nأرسل كلمة المرور:")
             return
-        except (PhoneCodeExpiredError, PhoneCodeInvalidError):
-            # الكود منتهي - نعيد إرساله بنفس الـ client المتصل
-            await event.respond("⏰ **انتهت صلاحية الكود. جاري إرسال كود جديد...**")
-            try:
-                result = await data['client'].send_code_request(data['phone'], force_sms=False)
-                data['hash'] = result.phone_code_hash
-                await event.respond("📲 **تم إرسال كود جديد. أرسله فوراً:**")
-                return
-            except Exception as e2:
-                await event.respond(f"❌ خطأ: {e2}")
-                del pending_logins[uid]
-                return
         except Exception as e:
             await event.respond(f"❌ فشل التفعيل: {e}")
             del pending_logins[uid]
