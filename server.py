@@ -8,6 +8,7 @@ import os
 import sys
 import requests
 import io
+import uuid
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -66,17 +67,17 @@ def health():
     return "OK", 200
 
 def run_flask():
-    app.run(host='0.0.0.0', port=5000)
+    """تشغيل Flask في الخلفية عشان Railway يلاقي port مفتوح"""
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 # ======================== المتغيرات العامة ========================
-bot = TelegramClient('bot_session', API_ID, API_HASH)
+# جلسة بوت فريدة كل مرة (عشان نضمن عدم وجود تعارض)
+bot = TelegramClient(f'bot_session_{uuid.uuid4().hex[:6]}', API_ID, API_HASH)
 
-# المستخدمون النشطون (userbots)
 active_clients = {}
 client_me = {}
-pending_logins = {}  # {user_id: {'state': 'api_id', ...}}
+pending_logins = {}
 
-# قواميس الأوامر (خاصة بكل حساب)
 muted_users = {}
 taqleed_users = {}
 banned_users = {}
@@ -87,7 +88,6 @@ ent7al_original = {}
 command_stats = {}
 user_info_cache = {}
 
-# نظام البنك
 bank_data = {}
 bank_counter = 1000
 
@@ -361,12 +361,10 @@ async def setup_handlers(client, phone):
             except:
                 pass
 
-    # ==================== سورس ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.سورس$'))
     async def src(event):
         await event.edit("**⚜️ Rolex Telethon**\n\n• المطور: ƚᥲɦ᥆ᥙꪀ\n• قناة السورس: @Q_g_r_a_m\n• للأوامر: .اوامر", parse_mode='md')
 
-    # ==================== اوامر ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اوامر$'))
     async def cmds(event):
         track_command(phone, ".اوامر")
@@ -405,7 +403,6 @@ async def setup_handlers(client, phone):
 اكس او
 اوامر سورس""", parse_mode='md')
 
-    # ==================== ايدي ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.(ايدي|ا)$'))
     async def id_cmd(event):
         track_command(phone, ".ايدي")
@@ -427,7 +424,6 @@ async def setup_handlers(client, phone):
         lines.append(f"Ꭵძ {user.id}")
         await client.send_message(event.chat_id, "\n".join(lines))
 
-    # ==================== تقليد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تقليد$'))
     async def taq(event):
         target = None
@@ -445,7 +441,6 @@ async def setup_handlers(client, phone):
         if target and target in taqleed_users.get(phone, {}): del taqleed_users[phone][target]
         await event.edit("**• تم فك التقليد**")
 
-    # ==================== خط ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.خط$'))
     async def bold(event):
         bold_mode[phone] = True
@@ -456,7 +451,6 @@ async def setup_handlers(client, phone):
         bold_mode[phone] = False
         await event.edit("**• تم الغاء الخط العريض**")
 
-    # ==================== اسم ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اسم (.+)'))
     async def name(event):
         try:
@@ -464,7 +458,6 @@ async def setup_handlers(client, phone):
             await event.edit("**• تم تغيير الاسم**")
         except: await event.edit("**• فشل**")
 
-    # ==================== بايو ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بايو (.+)'))
     async def bio(event):
         try:
@@ -472,7 +465,6 @@ async def setup_handlers(client, phone):
             await event.edit("**• تم تغيير البايو**")
         except: await event.edit("**• فشل**")
 
-    # ==================== ث / غ ث ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ث$'))
     async def pin_msg(event):
         try:
@@ -487,7 +479,6 @@ async def setup_handlers(client, phone):
             else: await client(ToggleDialogPinRequest(peer=event.input_chat, pinned=False)); await event.edit("**• تم الغاء تثبيت المحادثة**")
         except: await event.edit("**• فشل**")
 
-    # ==================== اضافة ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اضافة (\d+)'))
     async def add_contacts(event):
         count = int(event.pattern_match.group(1))
@@ -504,7 +495,6 @@ async def setup_handlers(client, phone):
             await event.edit(f"**• تم اضافة {added} جهة**")
         except: await event.edit("**• فشل**")
 
-    # ==================== عدد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.عدد$'))
     async def msg_count(event):
         await event.edit("**• جاري العد**")
@@ -513,7 +503,6 @@ async def setup_handlers(client, phone):
             await event.edit(f"**ꪔᥲ᥉᥉ᥲᧁꫀ᥉ {history.count}**")
         except: await event.edit("**• فشل**")
 
-    # ==================== حذف ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حذف (\d+)$'))
     async def delete_count(event):
         count = int(event.pattern_match.group(1))
@@ -530,7 +519,6 @@ async def setup_handlers(client, phone):
             try: await (await event.get_reply_message()).delete(); await event.delete()
             except: await event.edit("**• فشل**")
 
-    # ==================== رن ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رن$'))
     async def call(event):
         await event.edit("**• جاري الاتصال**")
@@ -542,7 +530,6 @@ async def setup_handlers(client, phone):
             else: await event.edit("**• فشل**")
         except: await event.edit("**• فشل الاتصال**")
 
-    # ==================== قفل / فتح ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قفل$'))
     async def lock(event):
         if event.is_group:
@@ -561,7 +548,6 @@ async def setup_handlers(client, phone):
                 await event.edit("**• تم فتح الجروب**")
             except: await event.edit("**• فشل**")
 
-    # ==================== كتم / غ كتم ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.كتم$'))
     async def mute(event):
         target = None
@@ -578,7 +564,6 @@ async def setup_handlers(client, phone):
         if target and target in muted_users.get(phone, {}): del muted_users[phone][target]
         await event.edit("**• تم فك الكتم**")
 
-    # ==================== حظر / غ حظر ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حظر$'))
     async def ban(event):
         target = None
@@ -597,7 +582,6 @@ async def setup_handlers(client, phone):
             try: await client(UnblockRequest(target)); banned_users[phone].pop(target, None); await event.edit("**• تم فك الحظر**")
             except: await event.edit("**• فشل**")
 
-    # ==================== تقيد / غ تقييد ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تقيد$'))
     async def restrict(event):
         if event.is_group and event.is_reply:
@@ -610,7 +594,6 @@ async def setup_handlers(client, phone):
             try: await client.edit_permissions(event.chat_id, (await event.get_reply_message()).sender_id, send_messages=True); await event.edit("**• تم فك التقييد**")
             except: await event.edit("**• فشل**")
 
-    # ==================== تهكير ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تهكير$'))
     async def hack(event):
         n = "الضحية"
@@ -621,7 +604,6 @@ async def setup_handlers(client, phone):
         await event.edit("**تم اختراق 50%**"); await asyncio.sleep(1)
         await event.edit(f"**تم تهكير {n} بنجاح**")
 
-    # ==================== انتحال ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.انتحال$'))
     async def ent7al(event):
         track_command(phone, ".انتحال")
@@ -708,7 +690,6 @@ async def setup_handlers(client, phone):
         ent7al_original[phone] = {}
         await event.edit("**• تم فك الانتحال**")
 
-    # ==================== الأوامر الترفيهية ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ضحك$'))
     async def laugh(event): await animate_emojis(event, LAUGH_FRAMES, 0.4)
 
@@ -778,7 +759,6 @@ async def setup_handlers(client, phone):
         elif event.is_private: target_name = await get_user_name(client, event.chat_id)
         await event.edit(f"**Promoted {target_name} to Admin**")
 
-    # ==================== البنك ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حسابي$'))
     async def bank_my_account(event):
         acc = get_bank_account(phone)
@@ -862,14 +842,12 @@ async def setup_handlers(client, phone):
     async def bank_coin(event):
         await event.edit(f"**🪙 {random.choice(['ملك', 'كتابة'])}**")
 
-    # ==================== ألعاب ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اكس$'))
     async def game_x(event): await animate_emojis(event, X_FRAMES, 0.3)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.او$'))
     async def game_o(event): await animate_emojis(event, O_FRAMES, 0.3)
 
-    # ==================== أوامر الذكاء الاصطناعي ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ذكاء (.+)'))
     async def ai_cmd(event):
         question = event.pattern_match.group(1).strip()
@@ -899,7 +877,6 @@ async def setup_handlers(client, phone):
         answer = await asyncio.get_event_loop().run_in_executor(None, ask_gemini, prompt)
         await event.edit(f"**{answer}**" if answer else "**• فشل**")
 
-    # ==================== أوامر المالك ====================
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.احصائيات$'))
     async def dev_stats(event):
         if not is_dev(phone): return
@@ -1087,13 +1064,19 @@ async def start_userbot(phone, session_str):
 
 # ======================== بدء التشغيل ========================
 async def main():
+    # تشغيل Flask في الخلفية
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("✅ Flask health check started")
 
+    # تشغيل البوت
     await bot.start(bot_token=BOT_TOKEN)
     logger.info("✅ البوت متصل وجاهز")
+
+    # تحميل الجلسات القديمة
     await load_all_sessions()
+
+    # استمرار التشغيل
     await bot.run_until_disconnected()
 
 if __name__ == '__main__':
