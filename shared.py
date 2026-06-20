@@ -12,7 +12,6 @@ API_CONFIG_FILE = os.path.join(DATA_DIR, 'api_config.json')
 TEMP_DIR = os.path.join(DATA_DIR, 'temp')
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# ثوابت المطور
 DEV_PHONE = "+201096371454"
 DEV_USER_ID = 6443238809
 SOURCE_CHANNEL_USERNAME = "Q_g_r_a_m"
@@ -20,7 +19,6 @@ BOT_TOKEN = '8887748662:AAH3gpgZz6BsBCOx3yq8hXtnDel1dGVn7Mo'
 BOT_API_ID = 2040
 BOT_API_HASH = 'b18441a1ff607e10a989891a5462e627'
 
-# بيانات عامة
 active_clients = {}
 pending_logins = {}
 api_configs_storage = {}
