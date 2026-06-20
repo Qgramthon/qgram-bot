@@ -6,10 +6,11 @@ from shared import *
 from server import app
 from bot import bot
 
-main_loop = asyncio.new_event_loop()
+# لا تنشئ main_loop هنا، لأنه موجود في shared.py
+# main_loop = asyncio.new_event_loop()   <-- تم حذفه
 
 def start_main_loop():
-    asyncio.set_event_loop(main_loop)
+    asyncio.set_event_loop(main_loop)          # main_loop من shared.py
     main_loop.run_until_complete(load_all_sessions())
     asyncio.ensure_future(auto_save_sessions_loop())
     main_loop.run_forever()
