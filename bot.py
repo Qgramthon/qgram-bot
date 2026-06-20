@@ -64,8 +64,8 @@ async def bot_start(event):
     ]
     await event.respond(
         "**• لبدء تنصيب تيليثون ڪيوجࢪام 🜲**\n"
-        "**- إجلب بيانات حسابك للبدء**\n"
-        "**- اكمل خطوات التنصيب المطلوبة**",
+        "**- إجلب بيانات حسابك المطلوبة**\n"
+        "**- ارجع هنا وافتح تطبيق البوت**",
         buttons=buttons, parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"how_to_get_data"))
