@@ -526,7 +526,6 @@ async def setup_handlers(client, phone):
                     await event.edit("**• فشل في العثور على الملف**")
                     return
 
-            # صورة أو فيديو
             if filepath.lower().endswith(('.mp4', '.webm')):
                 duration_str = format_duration(info.get('duration', 0))
                 caption = f"᥉᥆ᥙɾᥴꫀ Ϙƚһ᥆ꪀ\n• {duration_str} | ρᎥꪀƚɾꫀ᥉ꫀƚ"
