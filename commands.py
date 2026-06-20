@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import logging
+import subprocess
 from telethon import events, Button
 from telethon.errors import FloodWaitError, ChatAdminRequiredError
 from telethon.tl.functions.account import UpdateProfileRequest
@@ -356,28 +357,38 @@ async def setup_handlers(client, phone):
         if not event.is_reply:
             await event.edit("**• يرجى الرد على رسالة صوتية**")
             return
+
         reply = await event.get_reply_message()
         if not reply.voice and not reply.audio:
             await event.edit("**• الرد على رسالة صوتية فقط**")
             return
+
         await event.edit("**• جاري تحويل الصوت إلى نص...**")
+
         try:
             import speech_recognition as sr
-            from pydub import AudioSegment
         except ImportError:
-            await event.edit("**• المكتبات غير مثبتة (SpeechRecognition, pydub)**")
+            await event.edit("**• مكتبة SpeechRecognition غير مثبتة**")
             return
+
         voice_path = os.path.join(TEMP_DIR, f"voice_{phone}_{reply.id}.ogg")
         await client.download_media(reply, voice_path)
         wav_path = voice_path.replace(".ogg", ".wav")
+
         try:
-            audio = AudioSegment.from_file(voice_path, format="ogg")
-            audio.export(wav_path, format="wav")
+            subprocess.run(
+                ["ffmpeg", "-i", voice_path, "-ac", "1", "-ar", "16000", wav_path],
+                check=True, capture_output=True, timeout=30
+            )
+
             recognizer = sr.Recognizer()
             with sr.AudioFile(wav_path) as source:
                 audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="ar-AR")
+
             await event.edit(f"**النص:**\n{text}")
+        except subprocess.CalledProcessError as e:
+            await event.edit(f"**• فشل تحويل الصوت: {e.stderr.decode()[:100]}**")
         except sr.UnknownValueError:
             await event.edit("**• لم يتم التعرف على أي كلام**")
         except sr.RequestError as e:
