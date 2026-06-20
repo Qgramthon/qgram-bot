@@ -468,7 +468,7 @@ async def setup_handlers(client, phone):
                 if os.path.exists(p):
                     os.remove(p)
 
-    # --------------------- تحميل الصوت (يوت) – سريع ---------------------
+    # --------------------- تحميل الصوت (يوت) – تحسين السرعة ---------------------
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.يوت (.+)'))
     async def youtube_audio(event):
         query = event.pattern_match.group(1).strip()
@@ -490,21 +490,20 @@ async def setup_handlers(client, phone):
         ydl_opts = {
             'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
             'quiet': True,
-            'format': 'bestaudio[ext=m4a]/bestaudio',
+            'format': 'bestaudio[ext=m4a]/bestaudio',   # تنسيق أسرع للصوت
             'extractor_args': {'youtube': {'player_client': ['android']}},
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '128',
+                'preferredquality': '128',               # جودة أقل → سرعة أعلى
             }],
             'postprocessor_hooks': [hook],
             'retries': 2,
             'fragment_retries': 2,
-            'concurrent_fragment_downloads': 4,
+            'concurrent_fragment_downloads': 4,          # تحميل متوازي
             'nooverwrites': True,
             'no_color': True,
         }
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(search_query, download=True)
@@ -543,7 +542,7 @@ async def setup_handlers(client, phone):
         except Exception as e:
             await event.edit(f"**• فشل التحميل:**\n{str(e)[:200]}")
 
-    # --------------------- تحميل الفيديو (فيد) – سريع ---------------------
+    # --------------------- تحميل الفيديو (فيد) – تحسين السرعة ---------------------
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فيد (.+)'))
     async def video_download(event):
         query = event.pattern_match.group(1).strip()
@@ -565,7 +564,7 @@ async def setup_handlers(client, phone):
         ydl_opts = {
             'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
             'quiet': True,
-            'format': 'best[height<=480][ext=mp4]/best[height<=480]',
+            'format': 'best[height<=480][ext=mp4]/best[height<=480]',   # جودة 480p أسرع
             'merge_output_format': 'mp4',
             'extractor_args': {'youtube': {'player_client': ['android']}},
             'postprocessor_hooks': [hook],
@@ -575,7 +574,6 @@ async def setup_handlers(client, phone):
             'nooverwrites': True,
             'no_color': True,
         }
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(search_query, download=True)
