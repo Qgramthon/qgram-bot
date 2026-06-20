@@ -358,8 +358,7 @@ def api_send_code():
             if await client.is_user_authorized():
                 active_clients[phone] = client
                 client_me[phone] = await client.get_me()
-                from commands import setup_handlers
-                start_client_in_background(client, phone, setup_handlers)
+                start_client_in_background(client, phone)          # <-- تم إصلاحه
                 await save_all_sessions()
                 return jsonify({"status": "already_active", "message": "Session already active"})
             sent = await client.send_code_request(phone)
@@ -391,8 +390,7 @@ def api_verify():
             client_me[phone] = await client.get_me()
             del pending_logins[phone]
             await save_all_sessions()
-            from commands import setup_handlers
-            start_client_in_background(client, phone, setup_handlers)
+            start_client_in_background(client, phone)          # <-- تم إصلاحه
             await notify_dev(f"تم تفعيل مستخدم جديد: {phone}")
             return jsonify({"status": "success", "message": "Telethon installed successfully"})
         except Exception as e:
@@ -401,7 +399,6 @@ def api_verify():
     return run_in_main(_verify())
 
 def run_in_main(coro):
-    # main_loop أصبح موجودًا في shared.py
     from shared import main_loop
     future = asyncio.run_coroutine_threadsafe(coro, main_loop)
     return future.result(timeout=60)
