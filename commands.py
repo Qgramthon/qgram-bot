@@ -12,7 +12,7 @@ from telethon.tl.functions.channels import InviteToChannelRequest
 from telethon.tl.functions.messages import AddChatUserRequest
 from shared import (
     active_clients, muted_users, taqleed_users, ent7al_users, ent7al_original,
-    client_me, track_command, logger, TEMP_DIR
+    client_me, track_command, logger, TEMP_DIR, voice_clients
 )
 
 async def get_user_info_full(client, user_id):
@@ -357,30 +357,19 @@ async def setup_handlers(client, phone):
             return
 
         final_filepath = None
-
-        def postprocessor_hook(d):
+        def hook(d):
             nonlocal final_filepath
             if d['status'] == 'finished':
                 final_filepath = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
 
-        if query.startswith("http"):
-            search_query = query
-        else:
-            search_query = f"ytsearch1:{query}"
-
+        search_query = f"ytsearch1:{query}" if not query.startswith("http") else query
         ydl_opts = {
-            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',   # الاسم الأصلي للفيديو
+            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
             'quiet': True,
-            'no_warnings': True,
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'postprocessor_hooks': [postprocessor_hook],
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+            'postprocessor_hooks': [hook],
         }
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(search_query, download=True)
@@ -403,7 +392,7 @@ async def setup_handlers(client, phone):
             await client.send_file(
                 event.chat_id,
                 filepath,
-                caption=f"**🎵 {info.get('title', 'بدون عنوان')}**",
+                caption="᥉᥆ᥙɾᥴꫀ Ϙƚһ᥆ꪀ",
                 attributes=[DocumentAttributeAudio(
                     duration=info.get('duration', 0),
                     title=info.get('title', ''),
@@ -428,39 +417,43 @@ async def setup_handlers(client, phone):
             await event.edit("**• مكتبة yt-dlp غير مثبتة**")
             return
 
-        # سنستخدم نفس منطق الاسم الأصلي
-        if query.startswith("http"):
-            search_query = query
-        else:
-            search_query = f"ytsearch1:{query}"
+        final_filepath = None
+        def hook(d):
+            nonlocal final_filepath
+            if d['status'] == 'finished':
+                final_filepath = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
 
+        search_query = f"ytsearch1:{query}" if not query.startswith("http") else query
         ydl_opts = {
-            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',   # العنوان الأصلي
+            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
             'quiet': True,
-            'no_warnings': True,
-            'format': 'best[height<=720]',   # جودة 720p كحد أقصى لتجنب حجم كبير
+            'format': 'best[height<=720]',
             'merge_output_format': 'mp4',
+            'postprocessor_hooks': [hook],
         }
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(search_query, download=True)
-                filepath = ydl.prepare_filename(info)
-                if not os.path.exists(filepath):
-                    # في بعض الأحيان قد يكون الملف بصيغة مختلفة
-                    base = os.path.splitext(filepath)[0]
-                    for ext in ['.mp4', '.webm', '.mkv']:
-                        if os.path.exists(base + ext):
-                            filepath = base + ext
-                            break
-                    else:
-                        await event.edit("**• فشل في العثور على ملف الفيديو**")
-                        return
+                await asyncio.sleep(1)
+
+            if final_filepath and os.path.exists(final_filepath):
+                filepath = final_filepath
+            else:
+                base = ydl.prepare_filename(info)
+                base_no_ext = os.path.splitext(base)[0]
+                for ext in ['.mp4', '.webm', '.mkv']:
+                    candidate = base_no_ext + ext
+                    if os.path.exists(candidate):
+                        filepath = candidate
+                        break
+                else:
+                    await event.edit("**• فشل في العثور على ملف الفيديو**")
+                    return
 
             await client.send_file(
                 event.chat_id,
                 filepath,
-                caption=f"**🎬 {info.get('title', 'بدون عنوان')}**",
+                caption="᥉᥆ᥙɾᥴꫀ Ϙƚһ᥆ꪀ",
                 attributes=[DocumentAttributeVideo(
                     duration=info.get('duration', 0),
                     w=info.get('width', 0),
@@ -474,4 +467,140 @@ async def setup_handlers(client, phone):
         except Exception as e:
             await event.edit(f"**• فشل تحميل الفيديو:**\n{str(e)[:200]}")
 
-    logger.info(f"Handlers (taqleed/ent7al/add/youtube_audio/video) ready for {phone}")
+    # --------------------- تحميل تيك توك (تيك) ---------------------
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تيك (.+)'))
+    async def tiktok_download(event):
+        query = event.pattern_match.group(1).strip()
+        await event.edit("**• جاري تحميل فيديو تيك توك...**")
+
+        try:
+            import yt_dlp
+        except ImportError:
+            await event.edit("**• مكتبة yt-dlp غير مثبتة**")
+            return
+
+        final_filepath = None
+        def hook(d):
+            nonlocal final_filepath
+            if d['status'] == 'finished':
+                final_filepath = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
+
+        # إذا كان رابط تيك توك مباشر نستخدمه، وإلا نبحث في يوتيوب (لعدم وجود بحث تيك توك عام)
+        if "tiktok.com" in query:
+            search_query = query
+        else:
+            search_query = f"ytsearch1:{query}"
+
+        ydl_opts = {
+            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
+            'quiet': True,
+            'format': 'best[height<=720]',
+            'merge_output_format': 'mp4',
+            'postprocessor_hooks': [hook],
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(search_query, download=True)
+                await asyncio.sleep(1)
+
+            if final_filepath and os.path.exists(final_filepath):
+                filepath = final_filepath
+            else:
+                base = ydl.prepare_filename(info)
+                base_no_ext = os.path.splitext(base)[0]
+                for ext in ['.mp4', '.webm', '.mkv']:
+                    candidate = base_no_ext + ext
+                    if os.path.exists(candidate):
+                        filepath = candidate
+                        break
+                else:
+                    await event.edit("**• فشل في العثور على ملف الفيديو**")
+                    return
+
+            await client.send_file(
+                event.chat_id,
+                filepath,
+                caption="᥉᥆ᥙɾᥴꫀ Ϙƚһ᥆ꪀ",
+                attributes=[DocumentAttributeVideo(
+                    duration=info.get('duration', 0),
+                    w=info.get('width', 0),
+                    h=info.get('height', 0),
+                    supports_streaming=True
+                )]
+            )
+            await event.delete()
+            os.remove(filepath)
+
+        except Exception as e:
+            await event.edit(f"**• فشل تحميل تيك توك:**\n{str(e)[:200]}")
+
+    # --------------------- تشغيل أغنية في المكالمة الجماعية ---------------------
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غني (.+)'))
+    async def play_song(event):
+        query = event.pattern_match.group(1).strip()
+        await event.edit("**• جاري تحميل الأغنية وتشغيلها في المكالمة...**")
+
+        try:
+            import yt_dlp
+            from pytgcalls import PyTgCalls
+            from pytgcalls.types import AudioPiped
+        except ImportError:
+            await event.edit("**• المكتبات غير مثبتة (pytgcalls, yt-dlp)**")
+            return
+
+        if not event.is_group:
+            await event.edit("**• الأمر يعمل في المجموعات فقط**")
+            return
+
+        final_filepath = None
+        def hook(d):
+            nonlocal final_filepath
+            if d['status'] == 'finished':
+                final_filepath = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
+
+        search_query = f"ytsearch1:{query}" if not query.startswith("http") else query
+        ydl_opts = {
+            'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',
+            'quiet': True,
+            'format': 'bestaudio/best',
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+            'postprocessor_hooks': [hook],
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_query, download=True)
+        if not final_filepath:
+            base = ydl.prepare_filename(info)
+            base_no_ext = os.path.splitext(base)[0]
+            for ext in ['.mp3', '.m4a', '.webm']:
+                if os.path.exists(base_no_ext + ext):
+                    final_filepath = base_no_ext + ext
+                    break
+        if not final_filepath:
+            await event.edit("**• فشل تحميل الصوت**")
+            return
+
+        if phone not in voice_clients:
+            vc = PyTgCalls(client)
+            await vc.start()
+            voice_clients[phone] = vc
+        else:
+            vc = voice_clients[phone]
+
+        try:
+            await vc.join_group_call(event.chat_id, AudioPiped(final_filepath))
+            await event.edit(f"**• تم التشغيل: {info.get('title', '')}**")
+        except Exception as e:
+            await event.edit(f"**• فشل التشغيل: {str(e)[:100]}**")
+
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ايقاف$'))
+    async def stop_voice(event):
+        if phone in voice_clients:
+            try:
+                await voice_clients[phone].leave_group_call(event.chat_id)
+                await event.edit("**• تم إيقاف التشغيل والخروج**")
+            except Exception as e:
+                await event.edit(f"**• خطأ: {str(e)[:100]}**")
+        else:
+            await event.edit("**• لا يوجد تشغيل حالي**")
+
+    logger.info(f"All handlers ready for {phone}")
