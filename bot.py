@@ -1,9 +1,12 @@
-import asyncio, uuid
+# bot.py
+import asyncio, uuid, os
 from telethon import TelegramClient, events, Button
 from shared import *
 from collections import Counter
 
 bot = TelegramClient(f'bot_session_{uuid.uuid4().hex[:6]}', BOT_API_ID, BOT_API_HASH)
+
+START_IMAGE = "start.jpg"
 
 # --- القائمة البيضاء (Whitelist) ---
 allowed_chats = set()
@@ -15,7 +18,6 @@ ALLOWED_KEYWORDS = ["Qthon", "تيليثون", "لوحة تحكم", "طريقة 
                     "إذاعة", "رجوع", "قريباً", "غير مصرح", "تم تفعيل"]
 
 def is_allowed_text(text):
-    """التحقق من أن النص يحتوي على إحدى الكلمات المصرح بها"""
     if not text:
         return False
     for keyword in ALLOWED_KEYWORDS:
@@ -38,13 +40,10 @@ def dev_panel_markup():
 # --- منع إرسال أي رسالة غير مسموح بها ---
 @bot.on(events.NewMessage(outgoing=True))
 async def block_unauthorized(event):
-    # إذا كانت المحادثة غير موجودة في القائمة البيضاء → حذف فوري
     if event.chat_id not in allowed_chats:
         await event.delete()
         logger.warning(f"تم حذف رسالة صادرة غير مصرح بها إلى {event.chat_id}")
         return
-
-    # إذا كانت المحادثة مسموحة ولكن النص لا يحتوي على الكلمات المصرح بها → حذف
     if not is_allowed_text(event.text):
         await event.delete()
         logger.warning(f"تم حذف رسالة غير مصرح بها نصياً إلى {event.chat_id}: {event.text[:50]}")
@@ -53,20 +52,35 @@ async def block_unauthorized(event):
 async def bot_start(event):
     allowed_chats.add(event.chat_id)
     user_id = event.sender_id
-    if is_dev(user_id):
-        await event.respond("**لوحة تحكم Qthon**\n\nاختر خياراً.",
-                            buttons=dev_panel_markup(), parse_mode='md')
-        return
 
     buttons = [
         [Button.url("الحصول على بياناتي", "https://my.telegram.org/apps")],
-        [Button.inline("كيفية جلب البيانات", b"how_to_get_data")],
+        [Button.url("بدء التنصيب", "https://t.me/Qthon_bot")]
     ]
-    await event.respond(
+
+    caption = (
         "**• لبدء تنصيب تيليثون ڪيوجࢪام 🜲**\n"
-        "**- إجلب بيانات حسابك المطلوبة**\n"
-        "**- ارجع هنا وافتح تطبيق البوت**",
-        buttons=buttons, parse_mode='md')
+        "**- قم بجلب معلومات حسابك**\n"
+        "**- لبدء تنصيب إفتح تطبيق البوت**\n"
+        "**- أكمل إجراءات التنصيب المطلوبة**\n"
+        "**- لن يستغرق التنصيب الكثير من الوقت**"
+    )
+
+    # إرسال الصورة إذا كانت موجودة في المشروع
+    if os.path.exists(START_IMAGE):
+        await event.respond(
+            file=START_IMAGE,
+            caption=caption,
+            buttons=buttons,
+            parse_mode='md'
+        )
+    else:
+        await event.respond(caption, buttons=buttons, parse_mode='md')
+
+    # لوحة المطور تظهر فقط للمطور بعد /start
+    if is_dev(user_id):
+        await event.respond("**لوحة تحكم Qthon**\n\nاختر خياراً.",
+                            buttons=dev_panel_markup(), parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"how_to_get_data"))
 async def how_to_get_data(event):
