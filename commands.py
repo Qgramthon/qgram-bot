@@ -5,6 +5,7 @@ import logging
 import subprocess
 import shutil
 import requests
+import re
 from concurrent.futures import ThreadPoolExecutor
 from telethon import events
 from telethon.errors import FloodWaitError, ChatAdminRequiredError
@@ -21,74 +22,45 @@ from shared import (
     client_me, track_command, logger, TEMP_DIR
 )
 
-# ────────────── إعدادات التحميل الجبارة ──────────────
-_DOWNLOAD_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="yt_dl")
-_COOKIES_FILE = "cookies.txt"   # اختياري: يوضع في جذر المشروع
+# ────────────── مساعدات التحميل ──────────────
+_DOWNLOAD_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="dl")
+_COOKIES_FILE = "cookies.txt"
 
-# قوائم البدائل (Invidious / Piped)
 _INVIDIOUS_INSTANCES = [
     "https://invidious.tiekoetter.com",
     "https://invidi.link",
     "https://yewtu.be",
-    "https://invidious.snopyta.org",
-    "https://vid.puffyan.us",
 ]
 _PIPED_INSTANCES = [
     "https://pipedapi.kavin.rocks",
     "https://pipedapi.tokhmi.xyz",
-    "https://pipedapi.syncpundit.io",
 ]
 
 def _check_aria2c() -> bool:
     return shutil.which("aria2c") is not None
 
 def _build_base_opts(out_dir: str, client_type: str = 'web') -> dict:
-    """خيارات yt‑dlp المُحسَّنة مع دعم الكوكيز والبروكسي"""
     opts = {
         'outtmpl': f'{out_dir}/%(title).80s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-        'noprogress': True,
-        'noplaylist': True,
-        'concurrent_fragment_downloads': 8,
-        'http_chunk_size': 10 * 1024 * 1024,
-        'socket_timeout': 60,
-        'retries': 5,
-        'fragment_retries': 5,
-        'geo_bypass': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': [client_type],
-                'skip': ['dash', 'hls'],
-            }
-        },
+        'quiet': True, 'no_warnings': True, 'noprogress': True, 'noplaylist': True,
+        'concurrent_fragment_downloads': 8, 'http_chunk_size': 10*1024*1024,
+        'socket_timeout': 60, 'retries': 5, 'fragment_retries': 5, 'geo_bypass': True,
+        'extractor_args': {'youtube': {'player_client': [client_type], 'skip': ['dash','hls']}},
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         },
     }
-    # وكيل من متغيرات البيئة (HTTPS_PROXY)
     proxy = os.environ.get('HTTPS_PROXY') or os.environ.get('HTTP_PROXY')
-    if proxy:
-        opts['proxy'] = proxy
-    # كوكيز إن وجدت
-    if os.path.exists(_COOKIES_FILE):
-        opts['cookiefile'] = _COOKIES_FILE
-    # aria2c إن وجد
+    if proxy: opts['proxy'] = proxy
+    if os.path.exists(_COOKIES_FILE): opts['cookiefile'] = _COOKIES_FILE
     if _check_aria2c():
         opts.update({
             'external_downloader': 'aria2c',
             'external_downloader_args': {
-                'aria2c': [
-                    '--max-connection-per-server=16',
-                    '--split=16',
-                    '--min-split-size=1M',
-                    '--max-concurrent-downloads=8',
-                    '--continue=true',
-                    '--summary-interval=0',
-                    '--console-log-level=error',
-                ]
-            },
+                'aria2c': ['--max-connection-per-server=16','--split=16','--min-split-size=1M',
+                           '--max-concurrent-downloads=8','--continue=true','--summary-interval=0','--console-log-level=error']
+            }
         })
     return opts
 
@@ -97,13 +69,13 @@ def format_duration(seconds):
     mins, secs = divmod(int(seconds), 60)
     return f"{mins}:{secs:02d}"
 
-# ────────────── بحث بديل (Invidious / Piped) ──────────────
+# ────────────── طبقات البحث عن الفيديو ──────────────
 def _search_invidious(query: str) -> str:
-    headers = {"User-Agent": "Mozilla/5.0"}
     for instance in _INVIDIOUS_INSTANCES:
         try:
-            resp = requests.get(f"{instance}/api/v1/search", params={"q": query, "type": "video", "sort": "relevance"}, headers=headers, timeout=10)
-            if resp.status_code != 200: continue
+            resp = requests.get(f"{instance}/api/v1/search", params={"q": query, "type":"video","sort":"relevance"},
+                                headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
+            if resp.status_code!=200: continue
             data = resp.json()
             if not data: continue
             vid = data[0].get("videoId")
@@ -112,149 +84,161 @@ def _search_invidious(query: str) -> str:
     raise ValueError("Invidious: لا نتائج")
 
 def _search_piped(query: str) -> str:
-    headers = {"User-Agent": "Mozilla/5.0"}
     for instance in _PIPED_INSTANCES:
         try:
-            resp = requests.get(f"{instance}/search", params={"q": query, "filter": "videos"}, headers=headers, timeout=10)
-            if resp.status_code != 200: continue
-            data = resp.json()
-            items = data.get("items", [])
+            resp = requests.get(f"{instance}/search", params={"q": query, "filter":"videos"},
+                                headers={"User-Agent":"Mozilla/5.0"}, timeout=10)
+            if resp.status_code!=200: continue
+            items = resp.json().get("items",[])
             if not items: continue
-            vid = items[0].get("url", "").split("?v=")[-1]
+            vid = items[0].get("url","").split("?v=")[-1]
             if vid: return f"https://www.youtube.com/watch?v={vid}"
         except: continue
     raise ValueError("Piped: لا نتائج")
 
-# ────────────── Cobalt API (الطبقة الأخيرة) ──────────────
-def _fetch_cobalt_url(youtube_url: str) -> str:
-    """تحصل على رابط تحميل مباشر من Cobalt"""
+def _search_google(query: str) -> str:
+    headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}+site:youtube.com/watch"
     try:
-        resp = requests.post(
-            "https://co.wuk.sh/api/json",
-            json={"url": youtube_url, "filenamePattern": "basic", "downloadMode": "auto"},
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-            timeout=30
-        )
-        if resp.status_code != 200:
-            raise ValueError("Cobalt API رفض الطلب")
-        data = resp.json()
-        if data.get("status") == "error" or not data.get("url"):
-            raise ValueError("Cobalt لم يرجع رابط")
-        return data["url"]
+        resp = requests.get(search_url, headers=headers, timeout=15)
+        if resp.status_code != 200: raise ValueError("Google لم يستجب")
+        match = re.search(r"https?://(?:www\.)?youtube\.com/watch\?v=([\w-]{11})", resp.text)
+        if match: return match.group(0)
+        raise ValueError("Google: لم يجد رابط يوتيوب")
     except Exception as e:
-        raise ValueError(f"Cobalt: {e}")
+        raise ValueError(f"Google: {e}")
+
+def _fetch_cobalt_url(youtube_url: str) -> str:
+    try:
+        resp = requests.post("https://co.wuk.sh/api/json",
+            json={"url": youtube_url, "filenamePattern":"basic", "downloadMode":"auto"},
+            headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}, timeout=30)
+        if resp.status_code!=200: raise ValueError("Cobalt رفض")
+        data = resp.json()
+        if data.get("status")=="error" or not data.get("url"): raise ValueError("Cobalt لم يرجع رابط")
+        return data["url"]
+    except Exception as e: raise ValueError(f"Cobalt: {e}")
 
 def _download_from_cobalt(query: str, out_dir: str, audio_only: bool) -> tuple:
-    """تبحث عن الفيديو ثم تستخدم Cobalt لتنزيله"""
-    # 1. إيجاد رابط يوتيوب
     yt_url = None
-    if query.startswith("http"):
-        yt_url = query
+    if query.startswith("http"): yt_url = query
     else:
-        try: yt_url = _search_invidious(query)
-        except:
-            try: yt_url = _search_piped(query)
-            except: raise ValueError("لم يتم العثور على الفيديو عبر البدائل")
-    # 2. جلب رابط التحميل من Cobalt
+        for finder in (_search_invidious, _search_piped, _search_google):
+            try:
+                yt_url = finder(query)
+                break
+            except: continue
+        if not yt_url: raise ValueError("لم يتم العثور على الفيديو عبر جميع البدائل")
     cobalt_link = _fetch_cobalt_url(yt_url)
-    # 3. تحميل الملف
     resp = requests.get(cobalt_link, stream=True, timeout=60)
-    if resp.status_code != 200:
-        raise ValueError("فشل تحميل الملف من الرابط المباشر")
+    if resp.status_code!=200: raise ValueError("فشل تحميل الملف من الرابط المباشر")
     ext = "mp4" if not audio_only else "mp3"
     filepath = os.path.join(out_dir, f"cobalt_{int(asyncio.get_event_loop().time())}.{ext}")
-    with open(filepath, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=8192):
-            f.write(chunk)
-    return {"title": query if not query.startswith("http") else "cobalt_video", "duration": 0, "uploader": ""}, filepath
+    with open(filepath,"wb") as f:
+        for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
+    return {"title": query if not query.startswith("http") else "cobalt_video", "duration":0, "uploader":""}, filepath
 
 # ────────────── دوال التحميل (yt‑dlp) ──────────────
-def _run_ytdlp_audio(query: str, out_dir: str, client_type: str = 'web') -> tuple:
+def _run_ytdlp_audio(query, out_dir, client_type='web'):
     import yt_dlp
     final_path = {}
     def hook(d):
-        if d['status'] == 'finished':
-            fp = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
-            if fp: final_path['v'] = fp
+        if d['status']=='finished':
+            fp = d.get('info_dict',{}).get('filepath') or d.get('postprocessor_result',{}).get('filepath')
+            if fp: final_path['v']=fp
     opts = _build_base_opts(out_dir, client_type)
-    opts.update({
-        'format': 'bestaudio[abr>=128]/bestaudio/best',
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-        'postprocessor_hooks': [hook],
-    })
+    opts.update({'format':'bestaudio[abr>=128]/bestaudio/best',
+                 'postprocessors':[{'key':'FFmpegExtractAudio','preferredcodec':'mp3','preferredquality':'192'}],
+                 'postprocessor_hooks':[hook]})
     search = f"ytsearch1:{query}" if not query.startswith("http") else query
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(search, download=True)
         if isinstance(info, dict) and 'entries' in info:
-            if not info['entries']: raise ValueError("لم يتم العثور على أي نتيجة")
+            if not info['entries']: raise ValueError("yt-dlp: لا نتائج")
             info = info['entries'][0]
-        elif not info: raise ValueError("لم يتم العثور على فيديو")
+        elif not info: raise ValueError("yt-dlp: فشل")
     filepath = final_path.get('v')
     if not filepath or not os.path.exists(filepath):
-        base = ydl.prepare_filename(info)
-        base_no_ext = os.path.splitext(base)[0]
-        for ext in ('.mp3', '.m4a', '.opus', '.ogg', '.webm'):
-            c = base_no_ext + ext
-            if os.path.exists(c): filepath = c; break
-        else: raise FileNotFoundError("لم يُعثر على ملف الصوت بعد التحميل")
+        base = ydl.prepare_filename(info); base_no_ext = os.path.splitext(base)[0]
+        for ext in ('.mp3','.m4a','.opus','.ogg','.webm'):
+            if os.path.exists(base_no_ext+ext): filepath = base_no_ext+ext; break
+        else: raise FileNotFoundError("لم يُعثر على ملف الصوت")
     return info, filepath
 
-def _run_ytdlp_video(query: str, out_dir: str, client_type: str = 'web') -> tuple:
+def _run_ytdlp_video(query, out_dir, client_type='web'):
     import yt_dlp
     final_path = {}
     def hook(d):
-        if d['status'] == 'finished':
-            fp = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
-            if fp: final_path['v'] = fp
+        if d['status']=='finished':
+            fp = d.get('info_dict',{}).get('filepath') or d.get('postprocessor_result',{}).get('filepath')
+            if fp: final_path['v']=fp
     opts = _build_base_opts(out_dir, client_type)
-    opts.update({
-        'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
-        'merge_output_format': 'mp4',
-        'postprocessor_hooks': [hook],
-    })
+    opts.update({'format':'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+                 'merge_output_format':'mp4','postprocessor_hooks':[hook]})
     search = f"ytsearch1:{query}" if not query.startswith("http") else query
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(search, download=True)
         if isinstance(info, dict) and 'entries' in info:
-            if not info['entries']: raise ValueError("لم يتم العثور على أي فيديو")
+            if not info['entries']: raise ValueError("yt-dlp: لا نتائج")
             info = info['entries'][0]
-        elif not info: raise ValueError("لم يتم العثور على فيديو")
+        elif not info: raise ValueError("yt-dlp: فشل")
     filepath = final_path.get('v')
     if not filepath or not os.path.exists(filepath):
-        base = ydl.prepare_filename(info)
-        base_no_ext = os.path.splitext(base)[0]
-        for ext in ('.mp4', '.webm', '.mkv'):
-            c = base_no_ext + ext
-            if os.path.exists(c): filepath = c; break
-        else: raise FileNotFoundError("لم يُعثر على ملف الفيديو بعد التحميل")
+        base = ydl.prepare_filename(info); base_no_ext = os.path.splitext(base)[0]
+        for ext in ('.mp4','.webm','.mkv'):
+            if os.path.exists(base_no_ext+ext): filepath = base_no_ext+ext; break
+        else: raise FileNotFoundError("لم يُعثر على ملف الفيديو")
     return info, filepath
 
-def _run_ytdlp_general(url: str, out_dir: str, client_type: str = 'web') -> tuple:
+def _run_ytdlp_general(url, out_dir, client_type='web'):
     import yt_dlp
     final_path = {}
     def hook(d):
-        if d['status'] == 'finished':
-            fp = d.get('info_dict', {}).get('filepath') or d.get('postprocessor_result', {}).get('filepath')
-            if fp: final_path['v'] = fp
+        if d['status']=='finished':
+            fp = d.get('info_dict',{}).get('filepath') or d.get('postprocessor_result',{}).get('filepath')
+            if fp: final_path['v']=fp
     opts = _build_base_opts(out_dir, client_type)
-    opts.update({'format': 'best', 'merge_output_format': 'mp4', 'postprocessor_hooks': [hook]})
+    opts.update({'format':'best','merge_output_format':'mp4','postprocessor_hooks':[hook]})
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
         if isinstance(info, dict) and 'entries' in info:
-            if not info['entries']: raise ValueError("لم يتم العثور على المحتوى")
+            if not info['entries']: raise ValueError("yt-dlp: لا محتوى")
             info = info['entries'][0]
-        elif not info: raise ValueError("فشل التحميل")
+        elif not info: raise ValueError("yt-dlp: فشل")
     filepath = final_path.get('v')
     if not filepath or not os.path.exists(filepath):
-        base = ydl.prepare_filename(info)
-        base_no_ext = os.path.splitext(base)[0]
-        for ext in ('.mp4', '.webm', '.mkv', '.jpg', '.jpeg', '.png', '.gif'):
-            c = base_no_ext + ext
-            if os.path.exists(c): filepath = c; break
-        else: raise FileNotFoundError("لم يُعثر على الملف بعد التحميل")
+        base = ydl.prepare_filename(info); base_no_ext = os.path.splitext(base)[0]
+        for ext in ('.mp4','.webm','.mkv','.jpg','.jpeg','.png','.gif'):
+            if os.path.exists(base_no_ext+ext): filepath = base_no_ext+ext; break
+        else: raise FileNotFoundError("لم يُعثر على الملف")
     return info, filepath
 
-# ────────────── دوال الانتحال (بدون تغيير) ──────────────
+# ────────────── البحث عن الصور (DuckDuckGo) ──────────────
+def _search_images_ddg(query: str, limit: int = 5) -> list:
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.images(query, max_results=limit))
+        return [img["image"] for img in results if img.get("image")]
+    except Exception as e:
+        raise ValueError(f"DuckDuckGo Images: {e}")
+
+def _download_image(url: str, out_dir: str) -> str:
+    try:
+        resp = requests.get(url, stream=True, timeout=15)
+        if resp.status_code != 200: return None
+        ext = os.path.splitext(url)[1].split('?')[0] or '.jpg'
+        if ext.lower() not in ('.jpg','.jpeg','.png','.webp','.gif','.bmp'):
+            ext = '.jpg'
+        filename = f"img_{int(asyncio.get_event_loop().time())}{ext}"
+        filepath = os.path.join(out_dir, filename)
+        with open(filepath, 'wb') as f:
+            for chunk in resp.iter_content(8192): f.write(chunk)
+        return filepath
+    except:
+        return None
+
+# ────────────── دوال الانتحال ──────────────
 async def get_user_info_full(client, user_id):
     try:
         user = await client.get_entity(user_id)
@@ -271,8 +255,7 @@ async def get_user_info_full(client, user_id):
 async def change_profile_photo(client, user_id, phone):
     try:
         bio = io.BytesIO()
-        await client.download_profile_photo(user_id, file=bio)
-        bio.seek(0)
+        await client.download_profile_photo(user_id, file=bio); bio.seek(0)
         uploaded = await client.upload_file(bio, file_name="photo.jpg")
         result = await client(UploadProfilePhotoRequest(file=uploaded))
         await asyncio.sleep(2)
@@ -432,7 +415,7 @@ async def setup_handlers(client, phone):
         except ChatAdminRequiredError: await event.edit("**• لا تملك صلاحيات لسحب الأعضاء**")
         except Exception as e: await event.edit(f"**• فشل: {str(e)[:50]}**")
 
-    # ─ـ نسخ الصوت والفيديو ─ـ
+    # ─ـ نسخ الصوت ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نسخ$'))
     async def transcribe_voice(event):
         if not event.is_reply: await event.edit("**• يرجى الرد على رسالة صوتية أو فيديو**"); return
@@ -445,7 +428,7 @@ async def setup_handlers(client, phone):
         await client.download_media(reply, voice_path)
         wav_path = voice_path.replace(".ogg", ".wav")
         try:
-            subprocess.run(["ffmpeg", "-i", voice_path, "-ac", "1", "-ar", "16000", wav_path], check=True, capture_output=True, timeout=30)
+            subprocess.run(["ffmpeg", "-i", voice_path, "-ac","1","-ar","16000", wav_path], check=True, capture_output=True, timeout=30)
             recognizer = sr.Recognizer()
             with sr.AudioFile(wav_path) as source: audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="ar-AR")
@@ -458,7 +441,7 @@ async def setup_handlers(client, phone):
             for p in [voice_path, wav_path]:
                 if os.path.exists(p): os.remove(p)
 
-    # ─ـ استيكر من صورة ─ـ
+    # ─ـ استيكر / صورة ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.استيك$'))
     async def photo_to_sticker(event):
         if not event.is_reply: await event.edit("**• يرجى الرد على صورة**"); return
@@ -472,7 +455,7 @@ async def setup_handlers(client, phone):
         await client.download_media(reply, img_path)
         try:
             im = Image.open(img_path).convert("RGBA")
-            im.thumbnail((512, 512), Image.LANCZOS)
+            im.thumbnail((512,512), Image.LANCZOS)
             im.save(stick_path, "WEBP")
             await client.send_file(event.chat_id, stick_path)
             await event.delete()
@@ -481,7 +464,6 @@ async def setup_handlers(client, phone):
             for p in [img_path, stick_path]:
                 if os.path.exists(p): os.remove(p)
 
-    # ─ـ صورة من استيكر ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بيك$'))
     async def sticker_to_photo(event):
         if not event.is_reply: await event.edit("**• يرجى الرد على استيكر**"); return
@@ -511,24 +493,19 @@ async def setup_handlers(client, phone):
         loop = asyncio.get_event_loop()
         info = filepath = None
         source = ""
-        # المحاولة 1: yt-dlp مباشر
-        for client_type in ('web', 'android'):
+        for client_type in ('web','android'):
             try:
                 info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _run_ytdlp_audio, query, TEMP_DIR, client_type)
                 break
-            except Exception:
-                continue
-        # المحاولة 2: Invidious → Piped → yt-dlp
+            except: continue
         if not info:
-            for searcher in (_search_invidious, _search_piped):
+            for searcher in (_search_invidious, _search_piped, _search_google):
                 try:
                     yt_url = searcher(query)
                     info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _run_ytdlp_audio, yt_url, TEMP_DIR, 'web')
-                    source = "[inv]" if searcher == _search_invidious else "[piped]"
+                    source = "[inv]" if searcher==_search_invidious else "[piped]" if searcher==_search_piped else "[google]"
                     break
-                except Exception:
-                    continue
-        # المحاولة 3: Cobalt
+                except: continue
         if not info:
             try:
                 info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _download_from_cobalt, query, TEMP_DIR, True)
@@ -536,9 +513,9 @@ async def setup_handlers(client, phone):
             except Exception as e:
                 await event.edit(f"**• فشل التحميل:**\n{str(e)[:200]}"); return
         try:
-            title = info.get('title', 'بدون عنوان')
+            title = info.get('title','بدون عنوان')
             if len(title) > 55: title = title[:52] + '...'
-            dur = format_duration(info.get('duration', 0))
+            dur = format_duration(info.get('duration',0))
             caption = f"{title}\n• {dur} | ᥲᥙძᎥ᥆ {source}".strip()
             await client.send_file(event.chat_id, filepath, caption=caption,
                                    attributes=[DocumentAttributeAudio(duration=info.get('duration',0), title=info.get('title',''), performer=info.get('uploader',''))])
@@ -557,21 +534,19 @@ async def setup_handlers(client, phone):
         loop = asyncio.get_event_loop()
         info = filepath = None
         source = ""
-        for client_type in ('web', 'android'):
+        for client_type in ('web','android'):
             try:
                 info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _run_ytdlp_video, query, TEMP_DIR, client_type)
                 break
-            except Exception:
-                continue
+            except: continue
         if not info:
-            for searcher in (_search_invidious, _search_piped):
+            for searcher in (_search_invidious, _search_piped, _search_google):
                 try:
                     yt_url = searcher(query)
                     info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _run_ytdlp_video, yt_url, TEMP_DIR, 'web')
-                    source = "[inv]" if searcher == _search_invidious else "[piped]"
+                    source = "[inv]" if searcher==_search_invidious else "[piped]" if searcher==_search_piped else "[google]"
                     break
-                except Exception:
-                    continue
+                except: continue
         if not info:
             try:
                 info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _download_from_cobalt, query, TEMP_DIR, False)
@@ -579,9 +554,9 @@ async def setup_handlers(client, phone):
             except Exception as e:
                 await event.edit(f"**• فشل تحميل الفيديو:**\n{str(e)[:200]}"); return
         try:
-            title = info.get('title', 'بدون عنوان')
+            title = info.get('title','بدون عنوان')
             if len(title) > 55: title = title[:52] + '...'
-            dur = format_duration(info.get('duration', 0))
+            dur = format_duration(info.get('duration',0))
             caption = f"{title}\n• {dur} | ᥎Ꭵძꫀ᥆ {source}".strip()
             await client.send_file(event.chat_id, filepath, caption=caption,
                                    attributes=[DocumentAttributeVideo(duration=info.get('duration',0), w=info.get('width',0), h=info.get('height',0), supports_streaming=True)])
@@ -592,34 +567,51 @@ async def setup_handlers(client, phone):
             try: os.remove(filepath)
             except: pass
 
-    # ─ـ بنترست (بين) ─ـ
-    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بين (.+)'))
-    async def pinterest_download(event):
-        url = event.pattern_match.group(1).strip()
-        if "pinterest.com" not in url and "pin.it" not in url: await event.edit("**• الرجاء إدخال رابط بنترست صالح**"); return
-        await event.edit("**• 📌 جاري التحميل من بنترست...**")
+    # ─ـ تحميل الصور (بن) ─ـ
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بن (.+)'))
+    async def image_search_download(event):
+        query = event.pattern_match.group(1).strip()
+        if query.startswith("http"):
+            # رابط مباشر – نحمّل الصورة وحدها
+            await event.edit("**• 📷 جاري تحميل الصورة...**")
+            loop = asyncio.get_event_loop()
+            try:
+                filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _download_image, query, TEMP_DIR)
+                if filepath:
+                    await client.send_file(event.chat_id, filepath)
+                    await event.delete()
+                    os.remove(filepath)
+                else:
+                    await event.edit("**• فشل تحميل الصورة**")
+            except Exception as e:
+                await event.edit(f"**• فشل: {str(e)[:100]}**")
+            return
+
+        # وإلا فهو استعلام بحثي
+        await event.edit("**• 🔍 جاري البحث عن صور...**")
         loop = asyncio.get_event_loop()
         try:
-            info, filepath = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _run_ytdlp_general, url, TEMP_DIR, 'web')
-        except Exception as e:
-            await event.edit(f"**• فشل تحميل بنترست:**\n{str(e)[:200]}"); return
-        try:
-            title = info.get('title', 'بدون عنوان')
-            if len(title) > 55: title = title[:52] + '...'
-            if filepath.lower().endswith(('.mp4','.webm')):
-                dur = format_duration(info.get('duration', 0))
-                caption = f"{title}\n• {dur} | ρᎥꪀƚɾꫀ᥉ꫀƚ"
-                await client.send_file(event.chat_id, filepath, caption=caption,
-                                       attributes=[DocumentAttributeVideo(duration=info.get('duration',0), w=info.get('width',0), h=info.get('height',0), supports_streaming=True)])
-            else:
-                caption = f"{title}\n• Pin | ρᎥꪀƚɾꫀ᥉ꫀƚ"
-                await client.send_file(event.chat_id, filepath, caption=caption)
+            urls = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _search_images_ddg, query, 5)
+            if not urls:
+                await event.edit("**• لم يتم العثور على صور**")
+                return
+            downloaded = []
+            for url in urls[:3]:   # 3 صور فقط
+                path = await loop.run_in_executor(_DOWNLOAD_EXECUTOR, _download_image, url, TEMP_DIR)
+                if path:
+                    downloaded.append(path)
+            if not downloaded:
+                await event.edit("**• فشل تحميل الصور**")
+                return
+            # إرسال الصور
+            for path in downloaded:
+                await client.send_file(event.chat_id, path)
+                os.remove(path)
             await event.delete()
+        except ImportError:
+            await event.edit("**• مكتبة duckduckgo_search غير مثبتة. أضفها إلى requirements.txt**")
         except Exception as e:
-            await event.edit(f"**• فشل الإرسال:**\n{str(e)[:200]}")
-        finally:
-            try: os.remove(filepath)
-            except: pass
+            await event.edit(f"**• فشل: {str(e)[:200]}**")
 
     # ─ـ مراقبة الخاص ─ـ
     message_cache = {}
