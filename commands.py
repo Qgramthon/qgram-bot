@@ -40,10 +40,11 @@ def _build_base_opts(out_dir: str) -> dict:
         'fragment_retries': 5,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web'],
+                'player_client': ['android'],   # فقط عميل أندرويد
                 'skip': ['dash', 'hls'],
             }
         },
+        'cookiefile': '/dev/null',   # كوكيز وهمي لإلغاء التحقق البشري
     }
     if _check_aria2c():
         opts.update({
