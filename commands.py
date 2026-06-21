@@ -27,6 +27,7 @@ def _check_aria2c() -> bool:
     return shutil.which("aria2c") is not None
 
 def _build_base_opts(out_dir: str) -> dict:
+    """خيارات yt-dlp محسّنة مع انتحال iOS لتجاوز حظر يوتيوب"""
     opts = {
         'outtmpl': f'{out_dir}/%(title).80s.%(ext)s',
         'quiet': True,
@@ -40,11 +41,14 @@ def _build_base_opts(out_dir: str) -> dict:
         'fragment_retries': 5,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'],   # عميل أندرويد فقط لتجاوز التحقق
+                'player_client': ['ios'],           # iOS بدلاً من android
                 'skip': ['dash', 'hls'],
             }
         },
-        # تم حذف cookiefile لأنه لا حاجة لملف كوكيز مع android
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
     }
     if _check_aria2c():
         opts.update({
