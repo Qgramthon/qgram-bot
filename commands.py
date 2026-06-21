@@ -40,11 +40,11 @@ def _build_base_opts(out_dir: str) -> dict:
         'fragment_retries': 5,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android'],   # فقط عميل أندرويد
+                'player_client': ['android'],   # عميل أندرويد فقط لتجاوز التحقق
                 'skip': ['dash', 'hls'],
             }
         },
-        'cookiefile': '/dev/null',   # كوكيز وهمي لإلغاء التحقق البشري
+        # تم حذف cookiefile لأنه لا حاجة لملف كوكيز مع android
     }
     if _check_aria2c():
         opts.update({
@@ -509,7 +509,7 @@ async def setup_handlers(client, phone):
         except Exception as e:
             await event.edit(f"**• فشل في جلب الأعضاء: {str(e)[:50]}**")
 
-    # ── نسخ الصوت ──
+    # ── نسخ الصوت ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نسخ$'))
     async def transcribe_voice(event):
         if not event.is_reply:
@@ -547,7 +547,7 @@ async def setup_handlers(client, phone):
             for p in [voice_path, wav_path]:
                 if os.path.exists(p): os.remove(p)
 
-    # ── استيكر من صورة ──
+    # ─ـ استيكر من صورة ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.استيك$'))
     async def photo_to_sticker(event):
         if not event.is_reply: await event.edit("**• يرجى الرد على صورة**"); return
@@ -570,7 +570,7 @@ async def setup_handlers(client, phone):
             for p in [img_path, stick_path]:
                 if os.path.exists(p): os.remove(p)
 
-    # ── صورة من استيكر ──
+    # ─ـ صورة من استيكر ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بيك$'))
     async def sticker_to_photo(event):
         if not event.is_reply: await event.edit("**• يرجى الرد على استيكر**"); return
@@ -592,7 +592,7 @@ async def setup_handlers(client, phone):
             for p in [stick_path, img_path]:
                 if os.path.exists(p): os.remove(p)
 
-    # ── تحميل صوت (يوت) ──
+    # ─ـ تحميل صوت (يوت) ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.يوت (.+)'))
     async def youtube_audio(event):
         query = event.pattern_match.group(1).strip()
@@ -619,7 +619,7 @@ async def setup_handlers(client, phone):
             try: os.remove(filepath)
             except: pass
 
-    # ── تحميل فيديو (فيد) ──
+    # ─ـ تحميل فيديو (فيد) ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فيد (.+)'))
     async def video_download(event):
         query = event.pattern_match.group(1).strip()
@@ -646,7 +646,7 @@ async def setup_handlers(client, phone):
             try: os.remove(filepath)
             except: pass
 
-    # ── تحميل بنترست (بين) ──
+    # ─ـ تحميل بنترست (بين) ─ـ
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بين (.+)'))
     async def pinterest_download(event):
         url = event.pattern_match.group(1).strip()
@@ -679,7 +679,7 @@ async def setup_handlers(client, phone):
             try: os.remove(filepath)
             except: pass
 
-    # ── مراقبة الخاص (تعديل/حذف) ──
+    # ─ـ مراقبة الخاص (تعديل/حذف) ─ـ
     message_cache = {}
     @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private and not e.out))
     async def cache_private_message(event):
