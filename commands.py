@@ -53,7 +53,7 @@ active_animations = {}
 MIN_FREE_SPACE_MB = 50
 
 # متغيرات تنسيق النص العام
-text_format_mode = {}  # يخزن وضع التنسيق لكل رقم
+text_format_mode = {}
 
 # ============== دوال المساحة ==============
 def get_free_space_mb():
@@ -73,19 +73,16 @@ def check_disk_space(min_mb=MIN_FREE_SPACE_MB):
 
 def clean_temp_files():
     cleaned = 0
-    freed = 0
     if TEMP_DIR and os.path.exists(TEMP_DIR):
         for f in os.listdir(TEMP_DIR):
             fp = os.path.join(TEMP_DIR, f)
             if os.path.isfile(fp):
                 try:
-                    sz = os.path.getsize(fp)
                     os.remove(fp)
                     cleaned += 1
-                    freed += sz
                 except:
                     continue
-    return cleaned, freed
+    return cleaned
 
 def safe_remove(filepath):
     try:
@@ -114,73 +111,42 @@ def clean_filename(name):
     name = re.sub(r'\s+', ' ', name).strip()
     return name[:100]
 
-# ============== دوال النصوص المزخرفة ==============
-def make_bold(text):
-    """تحويل النص إلى عريض"""
-    bold_map = {
-        'a': '𝗮', 'b': '𝗯', 'c': '𝗰', 'd': '𝗱', 'e': '𝗲', 'f': '𝗳', 'g': '𝗴', 'h': '𝗵',
-        'i': '𝗶', 'j': '𝗷', 'k': '𝗸', 'l': '𝗹', 'm': '𝗺', 'n': '𝗻', 'o': '𝗼', 'p': '𝗽',
-        'q': '𝗾', 'r': '𝗿', 's': '𝘀', 't': '𝘁', 'u': '𝘂', 'v': '𝘃', 'w': '𝘄', 'x': '𝘅',
-        'y': '𝘆', 'z': '𝘇',
-        'A': '𝗔', 'B': '𝗕', 'C': '𝗖', 'D': '𝗗', 'E': '𝗘', 'F': '𝗙', 'G': '𝗚', 'H': '𝗛',
-        'I': '𝗜', 'J': '𝗝', 'K': '𝗞', 'L': '𝗟', 'M': '𝗠', 'N': '𝗡', 'O': '𝗢', 'P': '𝗣',
-        'Q': '𝗤', 'R': '𝗥', 'S': '𝗦', 'T': '𝗧', 'U': '𝗨', 'V': '𝗩', 'W': '𝗪', 'X': '𝗫',
-        'Y': '𝗬', 'Z': '𝗭',
-        '0': '𝟬', '1': '𝟭', '2': '𝟮', '3': '𝟯', '4': '𝟰', '5': '𝟱', '6': '𝟲', '7': '𝟳', '8': '𝟴', '9': '𝟵',
-    }
-    return ''.join(bold_map.get(c, c) for c in text)
-
-def make_italic(text):
-    """تحويل النص إلى مائل"""
-    italic_map = {
-        'a': '𝘢', 'b': '𝘣', 'c': '𝘤', 'd': '𝘥', 'e': '𝘦', 'f': '𝘧', 'g': '𝘨', 'h': '𝘩',
-        'i': '𝘪', 'j': '𝘫', 'k': '𝘬', 'l': '𝘭', 'm': '𝘮', 'n': '𝘯', 'o': '𝘰', 'p': '𝘱',
-        'q': '𝘲', 'r': '𝘳', 's': '𝘴', 't': '𝘵', 'u': '𝘶', 'v': '𝘷', 'w': '𝘸', 'x': '𝘹',
-        'y': '𝘺', 'z': '𝘻',
-        'A': '𝘈', 'B': '𝘉', 'C': '𝘊', 'D': '𝘋', 'E': '𝘌', 'F': '𝘍', 'G': '𝘎', 'H': '𝘏',
-        'I': '𝘐', 'J': '𝘑', 'K': '𝘒', 'L': '𝘓', 'M': '𝘔', 'N': '𝘕', 'O': '𝘖', 'P': '𝘗',
-        'Q': '𝘘', 'R': '𝘙', 'S': '𝘚', 'T': '𝘛', 'U': '𝘜', 'V': '𝘝', 'W': '𝘞', 'X': '𝘟',
-        'Y': '𝘠', 'Z': '𝘡',
-    }
-    return ''.join(italic_map.get(c, c) for c in text)
-
-def make_strikethrough(text):
-    """تحويل النص إلى مشطوب"""
-    return '\u0336'.join(c for c in text) + '\u0336'
-
-def apply_format(text, format_type):
-    """تطبيق التنسيق حسب النوع"""
+# ============== دوال تنسيق تيليجرام ==============
+def apply_telegram_format(text, format_type):
+    if not text:
+        return text
+    
     if format_type == 'bold':
-        return make_bold(text)
+        return f"**{text}**"
     elif format_type == 'italic':
-        return make_italic(text)
+        return f"__{text}__"
     elif format_type == 'strike':
-        return make_strikethrough(text)
+        return f"~~{text}~~"
     return text
 
-# ============== دوال النسب الوهمية ==============
+# ============== دوال النسب ==============
 def get_random_percentage():
     return random.randint(1, 100)
 
-def get_love_comment(percentage):
-    if percentage >= 90: return "💘 حب من طرف واحد ولا اتنين يا عم"
-    elif percentage >= 70: return "❤️‍🔥 فيه حب بس مش قد كده"
-    elif percentage >= 50: return "💕 نص نص يا معلم"
-    elif percentage >= 30: return "💔 الحب ضعيف شوية"
+def get_love_comment(p): 
+    if p >= 90: return "💘 حب من طرف واحد ولا اتنين يا عم"
+    elif p >= 70: return "❤️‍🔥 فيه حب بس مش قد كده"
+    elif p >= 50: return "💕 نص نص يا معلم"
+    elif p >= 30: return "💔 الحب ضعيف شوية"
     else: return "💀 مفيش حب خالص يا عم"
 
-def get_stupidity_comment(percentage):
-    if percentage >= 90: return "🐄 هاتوله برسيم... شكل مفيش منك امل"
-    elif percentage >= 70: return "🤪 غبي بس لسه فيه بصيص أمل"
-    elif percentage >= 50: return "🤔 نص نص... مش متأكدين"
-    elif percentage >= 30: return "🧐 لا يعم ده طلع بيفهم اهو"
+def get_stupidity_comment(p): 
+    if p >= 90: return "🐄 هاتوله برسيم... شكل مفيش منك امل"
+    elif p >= 70: return "🤪 غبي بس لسه فيه بصيص أمل"
+    elif p >= 50: return "🤔 نص نص... مش متأكدين"
+    elif p >= 30: return "🧐 لا يعم ده طلع بيفهم اهو"
     else: return "🧠 ده عبقري والله"
 
-def get_lying_comment(percentage):
-    if percentage >= 90: return "🤥 دنت كداب اوي يلا"
-    elif percentage >= 70: return "😏 كداب ومحترف كمان"
-    elif percentage >= 50: return "🤨 فيه كدب شوية"
-    elif percentage >= 30: return "🙂 لا يعم ده غلبان صادق"
+def get_lying_comment(p): 
+    if p >= 90: return "🤥 دنت كداب اوي يلا"
+    elif p >= 70: return "😏 كداب ومحترف كمان"
+    elif p >= 50: return "🤨 فيه كدب شوية"
+    elif p >= 30: return "🙂 لا يعم ده غلبان صادق"
     else: return "😇 ده صادق جدا والله"
 
 # ============== دوال التهكير والقتل ==============
@@ -268,47 +234,147 @@ async def run_animation(event, animation_name, duration=5):
         if anim_key in active_animations:
             del active_animations[anim_key]
 
-# ============== دوال البحث عن الصور ==============
-def search_all_images(query: str, limit: int = 5) -> list:
-    all_images = []
+# ============== دوال البحث عن الصور - محسنة ==============
+def search_images_google_direct(query: str, limit: int = 10) -> list:
+    """بحث مباشر في جوجل"""
+    images = []
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ar,en-US;q=0.9',
+            'Referer': 'https://www.google.com/',
+        }
+        
+        url = f"https://www.google.com/search?q={requests.utils.quote(query)}&tbm=isch&hl=en&safe=off"
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            urls = re.findall(r'\["(https?://[^"]+\.(?:jpg|jpeg|png|webp|gif|bmp)[^"]*)"', resp.text)
+            if not urls:
+                urls = re.findall(r'"(https?://[^"]+)"', resp.text)
+                urls = [u for u in urls if any(ext in u.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif'])]
+            
+            for url in urls:
+                url = url.split('"')[0]
+                if url.startswith('http') and 'google' not in url.lower() and 'gstatic' not in url.lower():
+                    if not any(s in url.lower() for s in ['icon', 'favicon', '/thumb/', 'small']):
+                        images.append(url)
+                        if len(images) >= limit:
+                            break
+    except Exception as e:
+        logger.error(f"Google search error: {e}")
     
+    return images
+
+def search_images_bing_direct(query: str, limit: int = 10) -> list:
+    """بحث في Bing"""
+    images = []
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        }
+        url = f"https://www.bing.com/images/search?q={requests.utils.quote(query)}&first=1&count={limit}&qft=+filterui:photo-photo"
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            urls = re.findall(r'murl&quot;:&quot;(https?://[^&]+)&quot;', resp.text)
+            if not urls:
+                urls = re.findall(r'src="(https?://[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"', resp.text, re.I)
+            
+            for url in urls:
+                if url.startswith('http') and 'bing.com' not in url.lower():
+                    images.append(url)
+                    if len(images) >= limit:
+                        break
+    except Exception as e:
+        logger.error(f"Bing search error: {e}")
+    
+    return images
+
+def search_images_ddg_direct(query: str, limit: int = 10) -> list:
+    """بحث في DuckDuckGo"""
+    images = []
     try:
         from duckduckgo_search import DDGS
         with DDGS() as ddgs:
-            results = list(ddgs.images(f"{query} photo", max_results=limit))
-            for img in results:
-                if img.get("image"):
-                    all_images.append(img["image"])
+            results = list(ddgs.images(query, max_results=limit))
+            images = [img["image"] for img in results if img.get("image")]
     except:
         pass
+    return images
+
+def search_images_yahoo(query: str, limit: int = 10) -> list:
+    """بحث في Yahoo"""
+    images = []
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = f"https://images.search.yahoo.com/search/images?p={requests.utils.quote(query)}&ei=UTF-8&fr=yfp-t"
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            urls = re.findall(r'src="(https?://[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"', resp.text, re.I)
+            for url in urls:
+                if 'yahoo' not in url.lower() and url.startswith('http'):
+                    images.append(url)
+                    if len(images) >= limit:
+                        break
+    except:
+        pass
+    return images
+
+def search_all_images(query: str, limit: int = 5) -> list:
+    """بحث شامل من جميع المحركات"""
+    all_images = []
     
-    if len(all_images) < limit:
+    engines = [
+        ("DuckDuckGo", search_images_ddg_direct),
+        ("Google", search_images_google_direct),
+        ("Bing", search_images_bing_direct),
+        ("Yahoo", search_images_yahoo),
+    ]
+    
+    for name, func in engines:
         try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            search_query = f"{query} صور"
-            url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}&tbm=isch&hl=ar"
-            resp = requests.get(url, headers=headers, timeout=15)
-            if resp.status_code == 200:
-                urls = re.findall(r'(?:data-src|src)="(https?://[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"', resp.text, re.I)
-                for url in urls:
-                    if 'google' not in url.lower():
-                        all_images.append(url)
-        except:
-            pass
+            results = func(query, limit=10)
+            if results:
+                all_images.extend(results)
+                logger.info(f"{name}: {len(results)} images")
+        except Exception as e:
+            logger.error(f"{name} failed: {e}")
     
     seen = set()
     unique = []
     for url in all_images:
+        url = url.strip()
+        if not url.startswith('http'):
+            continue
+        
+        if any(s in url.lower() for s in ['icon', 'favicon', 'thumb/32', 'thumb/64', 'avatar', 'logo']):
+            continue
+        
         if url not in seen:
             seen.add(url)
             unique.append(url)
     
+    logger.info(f"Total unique images: {len(unique)}")
+    
+    if not unique and ' ' in query:
+        simple_query = query.split()[0]
+        logger.info(f"Trying simple query: {simple_query}")
+        return search_all_images(simple_query, limit)
+    
     return unique[:limit]
 
 def download_image_direct(url: str, out_dir: str) -> str:
+    """تحميل صورة"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.google.com/'}
-        resp = requests.get(url, headers=headers, stream=True, timeout=30)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.google.com/',
+            'Accept': 'image/webp,image/*,*/*;q=0.8',
+        }
+        resp = requests.get(url, headers=headers, stream=True, timeout=30, allow_redirects=True)
         if resp.status_code != 200:
             return None
         
@@ -317,6 +383,7 @@ def download_image_direct(url: str, out_dir: str) -> str:
         if 'png' in content_type: ext = '.png'
         elif 'webp' in content_type: ext = '.webp'
         elif 'gif' in content_type: ext = '.gif'
+        elif 'jpeg' in content_type: ext = '.jpg'
         
         filename = f"img_{int(time.time()*1000)}_{hashlib.md5(url.encode()).hexdigest()[:8]}{ext}"
         filepath = os.path.join(out_dir, filename)
@@ -327,11 +394,11 @@ def download_image_direct(url: str, out_dir: str) -> str:
                 if chunk:
                     f.write(chunk)
                     size += len(chunk)
-                    if size > 10*1024*1024:
+                    if size > 15 * 1024 * 1024:
                         safe_remove(filepath)
                         return None
         
-        if size < 512:
+        if size < 1024:
             safe_remove(filepath)
             return None
         
@@ -477,206 +544,174 @@ async def setup_handlers(client, phone):
     if phone not in ent7al_original: ent7al_original[phone] = {}
     if phone not in text_format_mode: text_format_mode[phone] = None
 
-    # ============== تنسيق تلقائي للرسائل الصادرة ==============
+    # ============== تنسيق تلقائي ==============
     @client.on(events.NewMessage(outgoing=True))
     async def auto_format_outgoing(event):
-        """تنسيق تلقائي للرسائل الصادرة حسب الوضع المحدد"""
-        # تجاهل الأوامر
         if event.text and event.text.startswith('.'):
             return
         
         format_type = text_format_mode.get(phone)
         if format_type and event.text:
-            formatted = apply_format(event.text, format_type)
-            if formatted != event.text:
-                await event.edit(formatted)
+            formatted_text = apply_telegram_format(event.text, format_type)
+            if formatted_text != event.text:
+                try:
+                    await event.edit(formatted_text, parse_mode='markdown')
+                except:
+                    pass
 
-    # ============== أوامر تفعيل/إلغاء التنسيق ==============
+    # ============== أوامر التنسيق ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.عريض$'))
     async def toggle_bold(event):
-        """تفعيل/إلغاء وضع الخط العريض"""
         if text_format_mode.get(phone) == 'bold':
             text_format_mode[phone] = None
-            await event.edit("**• ✅ تم إلغاء الخط العريض**")
+            await event.edit("**• ✅ تم إلغاء الخط العريض**", parse_mode='markdown')
         else:
             text_format_mode[phone] = 'bold'
-            await event.edit("**• ✅ تم تفعيل الخط العريض - كل رسايلك هتبقى عريضة**")
+            await event.edit("**• ✅ تم تفعيل الخط العريض**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.مائل$'))
     async def toggle_italic(event):
-        """تفعيل/إلغاء وضع الخط المائل"""
         if text_format_mode.get(phone) == 'italic':
             text_format_mode[phone] = None
-            await event.edit("**• ✅ تم إلغاء الخط المائل**")
+            await event.edit("**• ✅ تم إلغاء الخط المائل**", parse_mode='markdown')
         else:
             text_format_mode[phone] = 'italic'
-            await event.edit("**• ✅ تم تفعيل الخط المائل - كل رسايلك هتبقى مائلة**")
+            await event.edit("**• ✅ تم تفعيل الخط المائل**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.مشطوب$'))
     async def toggle_strike(event):
-        """تفعيل/إلغاء وضع الخط المشطوب"""
         if text_format_mode.get(phone) == 'strike':
             text_format_mode[phone] = None
-            await event.edit("**• ✅ تم إلغاء الخط المشطوب**")
+            await event.edit("**• ✅ تم إلغاء الخط المشطوب**", parse_mode='markdown')
         else:
             text_format_mode[phone] = 'strike'
-            await event.edit("**• ✅ تم تفعيل الخط المشطوب - كل رسايلك هتبقى مشطوبة**")
+            await event.edit("**• ✅ تم تفعيل الخط المشطوب**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غ خط$'))
     async def reset_format(event):
-        """إلغاء أي تنسيق ورجوع الخط طبيعي"""
         text_format_mode[phone] = None
-        await event.edit("**• ✅ تم إرجاع الخط إلى الوضع الطبيعي**")
+        await event.edit("**• ✅ تم إرجاع الخط إلى الوضع الطبيعي**", parse_mode='markdown')
 
     # ============== أوامر النسب ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حب$'))
     async def love_calc(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على شخص**")
+            await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown')
             return
         
         reply = await event.get_reply_message()
         user = await client.get_entity(reply.sender_id)
         name = user.first_name or "المستخدم"
-        
-        percentage = get_random_percentage()
-        comment = get_love_comment(percentage)
-        
+        p = get_random_percentage()
         result = f"💘 **نسبة حب {name}:**\n"
-        result += f"{'█' * (percentage // 10)}{'░' * (10 - percentage // 10)} **{percentage}%**\n\n"
-        result += f"**{comment}**"
-        
-        await event.edit(result)
+        result += f"{'█' * (p // 10)}{'░' * (10 - p // 10)} **{p}%**\n\n"
+        result += f"**{get_love_comment(p)}**"
+        await event.edit(result, parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غباء$'))
     async def stupidity_calc(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على شخص**")
+            await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown')
             return
         
         reply = await event.get_reply_message()
         user = await client.get_entity(reply.sender_id)
         name = user.first_name or "المستخدم"
-        
-        percentage = get_random_percentage()
-        comment = get_stupidity_comment(percentage)
-        
+        p = get_random_percentage()
         result = f"🧠 **نسبة غباء {name}:**\n"
-        result += f"{'█' * (percentage // 10)}{'░' * (10 - percentage // 10)} **{percentage}%**\n\n"
-        result += f"**{comment}**"
-        
-        await event.edit(result)
+        result += f"{'█' * (p // 10)}{'░' * (10 - p // 10)} **{p}%**\n\n"
+        result += f"**{get_stupidity_comment(p)}**"
+        await event.edit(result, parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.كدب$'))
     async def lying_calc(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على شخص**")
+            await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown')
             return
         
         reply = await event.get_reply_message()
         user = await client.get_entity(reply.sender_id)
         name = user.first_name or "المستخدم"
-        
-        percentage = get_random_percentage()
-        comment = get_lying_comment(percentage)
-        
+        p = get_random_percentage()
         result = f"🤥 **نسبة كذب {name}:**\n"
-        result += f"{'█' * (percentage // 10)}{'░' * (10 - percentage // 10)} **{percentage}%**\n\n"
-        result += f"**{comment}**"
-        
-        await event.edit(result)
+        result += f"{'█' * (p // 10)}{'░' * (10 - p // 10)} **{p}%**\n\n"
+        result += f"**{get_lying_comment(p)}**"
+        await event.edit(result, parse_mode='markdown')
 
     # ============== أوامر المزاح ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تهكير$'))
     async def fake_hack(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على شخص**")
+            await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown')
             return
         
         reply = await event.get_reply_message()
         user = await client.get_entity(reply.sender_id)
         name = user.first_name or "المستخدم"
         
-        await event.edit(f"**🔓 جاري تهكير {name}...**")
-        
         for msg in HACK_MESSAGES:
-            await event.edit(f"**{msg}**")
+            await event.edit(f"**{msg}**", parse_mode='markdown')
             await asyncio.sleep(1.5)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قتل$'))
     async def fake_kill(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على شخص**")
+            await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown')
             return
         
         reply = await event.get_reply_message()
         user = await client.get_entity(reply.sender_id)
         name = user.first_name or "المستخدم"
         
-        await event.edit(f"**💀 جاري قتل {name}...**")
-        
         for msg in KILL_MESSAGES:
-            await event.edit(f"**{msg}**")
+            await event.edit(f"**{msg}**", parse_mode='markdown')
             await asyncio.sleep(1.5)
 
     # ============== أوامر الإحصائيات ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.جروباتي$'))
     async def my_groups(event):
-        await event.edit("**• 📊 جاري حساب الجروبات...**")
-        
+        await event.edit("**• 📊 جاري حساب الجروبات...**", parse_mode='markdown')
         groups = 0
         async for dialog in client.iter_dialogs():
-            if dialog.is_group:
-                groups += 1
-        
-        await event.edit(f"**📊 عدد الجروبات:** {groups}")
+            if dialog.is_group: groups += 1
+        await event.edit(f"**📊 عدد الجروبات:** {groups}", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قنواتي$'))
     async def my_channels(event):
-        await event.edit("**• 📊 جاري حساب القنوات...**")
-        
+        await event.edit("**• 📊 جاري حساب القنوات...**", parse_mode='markdown')
         channels = 0
         async for dialog in client.iter_dialogs():
-            if dialog.is_channel and not dialog.is_group:
-                channels += 1
-        
-        await event.edit(f"**📊 عدد القنوات:** {channels}")
+            if dialog.is_channel and not dialog.is_group: channels += 1
+        await event.edit(f"**📊 عدد القنوات:** {channels}", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تونزي$'))
     async def top_interactions(event):
-        await event.edit("**• 📊 جاري تحليل التفاعلات...**")
-        
+        await event.edit("**• 📊 جاري تحليل التفاعلات...**", parse_mode='markdown')
         interactions = {}
-        
         async for dialog in client.iter_dialogs():
             try:
                 async for message in client.iter_messages(dialog.id, limit=100):
                     if message.sender_id and message.sender_id != (await client.get_me()).id:
                         sender = message.sender_id
                         interactions[sender] = interactions.get(sender, 0) + 1
-            except:
-                continue
+            except: continue
         
         if not interactions:
-            await event.edit("**• ❌ لا توجد تفاعلات كافية**")
+            await event.edit("**• ❌ لا توجد تفاعلات كافية**", parse_mode='markdown')
             return
         
         top_user = max(interactions, key=interactions.get)
-        top_count = interactions[top_user]
-        
         try:
             user = await client.get_entity(top_user)
             name = user.first_name or "مستخدم"
-        except:
-            name = "مستخدم"
+        except: name = "مستخدم"
         
-        await event.edit(f"**🏆 الأكثر تفاعلاً معك:**\n👤 **{name}**\n💬 **{top_count} رسالة**")
+        await event.edit(f"**🏆 الأكثر تفاعلاً:**\n👤 **{name}**\n💬 **{interactions[top_user]} رسالة**", parse_mode='markdown')
 
     # ============== أوامر الأنيمشن ==============
     for cmd_name in ['ضحك', 'قلب', 'غيمة', 'ورد', 'كوكب', 'شتاء', 'قمر']:
         @client.on(events.NewMessage(outgoing=True, pattern=rf'^\.{cmd_name}$'))
         async def animation_handler(event, name=cmd_name):
-            await event.edit(f"**• جاري تشغيل أنيمشن {name}...**")
             asyncio.create_task(run_animation(event, name, duration=5))
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.وقف$'))
@@ -686,267 +721,219 @@ async def setup_handlers(client, phone):
             if key.startswith(str(event.chat_id)):
                 active_animations[key] = False
                 stopped += 1
-        
-        await event.edit(f"**• ⏹️ تم إيقاف {stopped} أنيمشن**" if stopped else "**• ❌ لا يوجد أنيمشن**")
+        await event.edit(f"**• ⏹️ تم إيقاف {stopped} أنيمشن**" if stopped else "**• ❌ لا يوجد أنيمشن**", parse_mode='markdown')
 
     # ============== أوامر التحميل ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.يوت (.+)'))
     async def youtube_audio(event):
         if not YTDLP_AVAILABLE:
-            await event.edit("**• ❌ مكتبة yt-dlp غير مثبتة**")
-            return
+            await event.edit("**• ❌ مكتبة yt-dlp غير مثبتة**", parse_mode='markdown'); return
         
         query = event.pattern_match.group(1).strip()
-        has_space, _ = check_disk_space(80)
-        if not has_space:
-            await event.edit("**• ❌ المساحة غير كافية**")
-            return
-        
-        await event.edit("**• 🎵 جاري التحميل...**")
+        await event.edit("**• 🎵 جاري التحميل...**", parse_mode='markdown')
         filepath = None
         
         try:
             info, filepath = await asyncio.get_event_loop().run_in_executor(
-                _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, True
-            )
+                _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, True)
             
             title = info['title'][:52] + '...' if len(info['title']) > 55 else info['title']
-            caption = f"{title}\n• {info['duration_str']} | ᥲᥙძᎥ᥆"
-            
-            await client.send_file(event.chat_id, filepath, caption=caption,
+            await client.send_file(event.chat_id, filepath,
+                                   caption=f"{title}\n• {info['duration_str']} | ᥲᥙძᎥ᥆",
                                    attributes=[DocumentAttributeAudio(duration=info['duration'], title=info['title'], performer=info['uploader'])],
                                    supports_streaming=True)
             await event.delete()
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:200]}**")
-        finally:
-            safe_remove(filepath)
+            await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
+        finally: safe_remove(filepath)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فيد (.+)'))
     async def video_download(event):
         if not YTDLP_AVAILABLE:
-            await event.edit("**• ❌ مكتبة yt-dlp غير مثبتة**")
-            return
+            await event.edit("**• ❌ مكتبة yt-dlp غير مثبتة**", parse_mode='markdown'); return
         
         query = event.pattern_match.group(1).strip()
-        has_space, _ = check_disk_space(150)
-        if not has_space:
-            await event.edit("**• ❌ المساحة غير كافية**")
-            return
-        
-        await event.edit("**• 🎬 جاري التحميل...**")
+        await event.edit("**• 🎬 جاري التحميل...**", parse_mode='markdown')
         filepath = None
         
         try:
             info, filepath = await asyncio.get_event_loop().run_in_executor(
-                _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, False
-            )
+                _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, False)
             
             title = info['title'][:52] + '...' if len(info['title']) > 55 else info['title']
-            caption = f"{title}\n• {info['duration_str']} | ᥎Ꭵძꫀ᥆"
-            
-            await client.send_file(event.chat_id, filepath, caption=caption,
+            await client.send_file(event.chat_id, filepath,
+                                   caption=f"{title}\n• {info['duration_str']} | ᥎Ꭵძꫀ᥆",
                                    attributes=[DocumentAttributeVideo(duration=info['duration'], w=0, h=0, supports_streaming=True)],
                                    supports_streaming=True)
             await event.delete()
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:200]}**")
-        finally:
-            safe_remove(filepath)
+            await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
+        finally: safe_remove(filepath)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.صوت$'))
     async def video_to_audio(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على فيديو**")
-            return
+            await event.edit("**• ❌ يرجى الرد على فيديو**", parse_mode='markdown'); return
         
         reply = await event.get_reply_message()
         if not (reply.video or reply.document):
-            await event.edit("**• ❌ يرجى الرد على فيديو**")
-            return
+            await event.edit("**• ❌ يرجى الرد على فيديو**", parse_mode='markdown'); return
         
-        await event.edit("**• 🎵 جاري التحويل...**")
-        video_path = None; audio_path = None
+        await event.edit("**• 🎵 جاري التحويل...**", parse_mode='markdown')
+        video_path = audio_path = None
         
         try:
             video_path = os.path.join(TEMP_DIR, f"video_{phone}_{int(time.time())}.mp4")
             await client.download_media(reply, video_path)
-            
-            audio_info = await asyncio.get_event_loop().run_in_executor(
-                _DOWNLOAD_EXECUTOR, convert_video_to_audio, video_path, TEMP_DIR
-            )
+            audio_info = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, convert_video_to_audio, video_path, TEMP_DIR)
             audio_path = audio_info['path']
-            
-            title = clean_filename("محول من فيديو")
-            dur = audio_info['duration_str']
-            
             await client.send_file(event.chat_id, audio_path,
-                                   caption=f"{title}\n• {dur} | 🎵",
-                                   attributes=[DocumentAttributeAudio(duration=int(audio_info['duration']), title=title)],
+                                   caption=f"محول\n• {audio_info['duration_str']} | 🎵",
+                                   attributes=[DocumentAttributeAudio(duration=int(audio_info['duration']), title='محول')],
                                    supports_streaming=True)
             await event.delete()
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:200]}**")
+            await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
         finally:
             safe_remove(video_path); safe_remove(audio_path)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نسخ$'))
     async def transcribe_voice(event):
         if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على صوتية**")
-            return
+            await event.edit("**• ❌ يرجى الرد على صوتية**", parse_mode='markdown'); return
         
         reply = await event.get_reply_message()
         if not (reply.voice or reply.audio):
-            await event.edit("**• ❌ يرجى الرد على صوتية**")
-            return
+            await event.edit("**• ❌ يرجى الرد على صوتية**", parse_mode='markdown'); return
         
         if not SR_AVAILABLE:
-            await event.edit("**• ❌ مكتبة SpeechRecognition غير مثبتة**")
-            return
+            await event.edit("**• ❌ مكتبة SpeechRecognition غير مثبتة**", parse_mode='markdown'); return
         
-        await event.edit("**• 🎤 جاري التحويل...**")
-        voice_path = None; wav_path = None
+        await event.edit("**• 🎤 جاري التحويل...**", parse_mode='markdown')
+        voice_path = wav_path = None
         
         try:
             voice_path = os.path.join(TEMP_DIR, f"voice_{phone}_{int(time.time())}.ogg")
             await client.download_media(reply, voice_path)
             wav_path = voice_path.replace('.ogg', '.wav')
-            
             subprocess.run(['ffmpeg', '-i', voice_path, '-ac', '1', '-ar', '16000', '-sample_fmt', 's16', wav_path],
                           capture_output=True, timeout=30)
-            
             recognizer = sr.Recognizer()
-            with sr.AudioFile(wav_path) as source:
-                audio_data = recognizer.record(source)
-            
+            with sr.AudioFile(wav_path) as source: audio_data = recognizer.record(source)
             text = None
             for lang in ['ar-AR', 'en-US']:
-                try:
-                    text = recognizer.recognize_google(audio_data, language=lang)
-                    break
+                try: text = recognizer.recognize_google(audio_data, language=lang); break
                 except: continue
-            
-            await event.edit(f"**📝 النص:**\n{text}" if text else "**• ❌ لم يتم التعرف على نص**")
+            await event.edit(f"**📝 النص:**\n{text}" if text else "**• ❌ لم يتم التعرف**", parse_mode='markdown')
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:150]}**")
+            await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally:
             safe_remove(voice_path); safe_remove(wav_path)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.استيك$'))
     async def photo_to_sticker(event):
-        if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على صورة**"); return
+        if not event.is_reply or not PIL_AVAILABLE:
+            await event.edit("**• ❌ يرجى الرد على صورة**", parse_mode='markdown'); return
         
         reply = await event.get_reply_message()
         if not reply.photo:
-            await event.edit("**• ❌ يرجى الرد على صورة**"); return
+            await event.edit("**• ❌ الرد على صورة فقط**", parse_mode='markdown'); return
         
-        if not PIL_AVAILABLE:
-            await event.edit("**• ❌ مكتبة Pillow غير مثبتة**"); return
-        
-        await event.edit("**• 🔄 جاري التحويل...**")
-        img_path = None; stick_path = None
+        await event.edit("**• 🔄 جاري التحويل...**", parse_mode='markdown')
+        img_path = stick_path = None
         
         try:
             img_path = os.path.join(TEMP_DIR, f"img_{phone}_{int(time.time())}.jpg")
             await client.download_media(reply, img_path)
             stick_path = img_path.replace('.jpg', '.webp')
-            
             im = Image.open(img_path).convert("RGBA")
             im.thumbnail((512, 512), Image.LANCZOS)
             im.save(stick_path, "WEBP", quality=80)
-            
             await client.send_file(event.chat_id, stick_path, force_document=False)
             await event.delete()
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:150]}**")
+            await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally:
             safe_remove(img_path); safe_remove(stick_path)
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بيك$'))
     async def sticker_to_photo(event):
-        if not event.is_reply:
-            await event.edit("**• ❌ يرجى الرد على استيكر**"); return
+        if not event.is_reply or not PIL_AVAILABLE:
+            await event.edit("**• ❌ يرجى الرد على استيكر**", parse_mode='markdown'); return
         
         reply = await event.get_reply_message()
         if not reply.sticker:
-            await event.edit("**• ❌ يرجى الرد على استيكر**"); return
+            await event.edit("**• ❌ الرد على استيكر فقط**", parse_mode='markdown'); return
         
-        if not PIL_AVAILABLE:
-            await event.edit("**• ❌ مكتبة Pillow غير مثبتة**"); return
-        
-        await event.edit("**• 🔄 جاري التحويل...**")
-        stick_path = None; img_path = None
+        await event.edit("**• 🔄 جاري التحويل...**", parse_mode='markdown')
+        stick_path = img_path = None
         
         try:
             stick_path = os.path.join(TEMP_DIR, f"sticker_{phone}_{int(time.time())}.webp")
             await client.download_media(reply, stick_path)
             img_path = stick_path.replace('.webp', '.png')
-            
             Image.open(stick_path).convert("RGBA").save(img_path, "PNG")
             await client.send_file(event.chat_id, img_path)
             await event.delete()
         except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:150]}**")
+            await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally:
             safe_remove(stick_path); safe_remove(img_path)
 
+    # ============== أمر .بن - المحسن ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بن (.+)'))
     async def image_search(event):
         query = event.pattern_match.group(1).strip()
         
         if query.startswith('http'):
-            await event.edit("**• 📷 جاري تحميل الصورة...**")
+            await event.edit("**• 📷 جاري تحميل الصورة...**", parse_mode='markdown')
             filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, query, TEMP_DIR)
             if filepath:
                 await client.send_file(event.chat_id, filepath)
                 await event.delete()
                 safe_remove(filepath)
             else:
-                await event.edit("**• ❌ فشل التحميل**")
+                await event.edit("**• ❌ فشل تحميل الصورة**", parse_mode='markdown')
             return
         
-        await event.edit(f"**• 🔍 جاري البحث عن '{query}'...**")
+        await event.edit(f"**• 🔍 جاري البحث عن '{query}'...**", parse_mode='markdown')
         
-        urls = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, search_all_images, query, 5)
+        urls = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, search_all_images, query, 10)
         
         if not urls:
-            await event.edit(f"**• ❌ لم يتم العثور على صور لـ '{query}'**\n**• جرب كلمات بحث أدق**")
+            await event.edit(f"**• ❌ لم يتم العثور على صور لـ '{query}'**\n**• جرب كلمات بحث مختلفة**", parse_mode='markdown')
             return
         
-        await event.edit(f"**• ✅ تم العثور على {len(urls)} صورة**\n**• 📥 جاري التحميل...**")
+        await event.edit(f"**• ✅ تم العثور على {len(urls)} صورة**\n**• 📥 جاري التحميل...**", parse_mode='markdown')
         
         success = 0
-        for i, url in enumerate(urls[:3], 1):
+        for i, url in enumerate(urls[:5], 1):
             try:
                 filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, url, TEMP_DIR)
                 if filepath:
                     await client.send_file(event.chat_id, filepath)
                     success += 1
                     safe_remove(filepath)
-                    await event.edit(f"**• 📤 تم إرسال {success} صورة...**")
+                    if success < min(len(urls), 5):
+                        await event.edit(f"**• 📤 تم إرسال {success} صورة...**", parse_mode='markdown')
                 await asyncio.sleep(0.3)
-            except:
+            except Exception as e:
+                logger.error(f"Failed image {i}: {e}")
                 continue
         
         if success > 0:
             await event.delete()
         else:
-            await event.edit(f"**• ❌ فشل تحميل صور '{query}'**")
+            await event.edit(f"**• ❌ فشل تحميل صور '{query}'**\n**• جرب مرة أخرى**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.المساحة$'))
     async def space_check(event):
-        await event.edit("**• 📊 جاري الفحص...**")
-        free_mb = get_free_space_mb()
-        cleaned, _ = clean_temp_files()
-        await event.edit(f"**📊 المساحة:** {get_free_space_mb():.1f} MB\n**🧹 تم تنظيف:** {cleaned} ملف")
+        await event.edit(f"**📊 المساحة:** {get_free_space_mb():.1f} MB", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تنظيف$'))
     async def force_clean(event):
-        await event.edit("**• 🧹 جاري التنظيف...**")
-        c, _ = clean_temp_files()
-        await event.edit(f"**✅ تم التنظيف: {c} ملف**\n**المساحة:** {get_free_space_mb():.1f} MB")
+        c = clean_temp_files()
+        await event.edit(f"**✅ تم تنظيف {c} ملف\n📊 المساحة: {get_free_space_mb():.1f} MB**", parse_mode='markdown')
 
     # ============== التقليد ==============
     @client.on(events.NewMessage(incoming=True))
@@ -959,18 +946,18 @@ async def setup_handlers(client, phone):
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تقليد$'))
     async def taq(event):
         target = (await event.get_reply_message()).sender_id if event.is_reply else event.chat_id if event.is_private else None
-        if target: taqleed_users[phone][target] = True; await event.edit("**• ✅ تم التقليد**")
+        if target: taqleed_users[phone][target] = True; await event.edit("**• ✅ تم التقليد**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غ تقليد$'))
     async def notaq(event):
         target = (await event.get_reply_message()).sender_id if event.is_reply else event.chat_id if event.is_private else None
-        if target and target in taqleed_users.get(phone, {}): del taqleed_users[phone][target]; await event.edit("**• ✅ تم فك التقليد**")
+        if target and target in taqleed_users.get(phone, {}): del taqleed_users[phone][target]; await event.edit("**• ✅ تم فك التقليد**", parse_mode='markdown')
 
     # ============== الانتحال ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.انتحال$'))
     async def ent7al(event):
         track_command(phone, ".انتحال")
-        await event.edit("**• 🔄 جاري الانتحال...**")
+        await event.edit("**• 🔄 جاري الانتحال...**", parse_mode='markdown')
         target_user = None
         if event.is_reply:
             try: target_user = await client.get_entity((await event.get_reply_message()).sender_id)
@@ -978,10 +965,10 @@ async def setup_handlers(client, phone):
         elif event.is_private:
             try: target_user = await client.get_entity(event.chat_id)
             except: pass
-        if not target_user: await event.edit("**• ❌ فشل**"); return
+        if not target_user: await event.edit("**• ❌ فشل**", parse_mode='markdown'); return
         
         target_info = await get_user_info_full(client, target_user.id)
-        if not target_info: await event.edit("**• ❌ فشل**"); return
+        if not target_info: await event.edit("**• ❌ فشل**", parse_mode='markdown'); return
         
         me = await client.get_me(); client_me[phone] = me
         original = {'first_name': me.first_name or '', 'last_name': me.last_name or '', 'about': '', 'added_photo_id': None}
@@ -999,21 +986,17 @@ async def setup_handlers(client, phone):
             except: pass
         except: pass
         
-        try:
-            await client(UpdateProfileRequest(about=target_info['bio'][:70] if target_info['bio'] else ''))
-            await asyncio.sleep(0.5)
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
+        try: await client(UpdateProfileRequest(about=target_info['bio'][:70] if target_info['bio'] else ''))
         except: pass
         
         photo_ok, added_id = await change_profile_photo(client, target_user.id, phone)
         if photo_ok and added_id: original['added_photo_id'] = added_id
         ent7al_original[phone] = original; ent7al_users[phone] = True
-        await event.edit("**• ✅ تم الانتحال**")
+        await event.edit("**• ✅ تم الانتحال**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.الغاء انتحال$'))
     async def unent7al(event):
-        if not ent7al_users.get(phone): await event.edit("**• ❌ لا يوجد انتحال**"); return
+        if not ent7al_users.get(phone): await event.edit("**• ❌ لا يوجد انتحال**", parse_mode='markdown'); return
         original = ent7al_original[phone]
         try: await client(UpdateProfileRequest(first_name=original.get('first_name',''), last_name=original.get('last_name','')))
         except: pass
@@ -1023,7 +1006,7 @@ async def setup_handlers(client, phone):
         try: await client(UpdateProfileRequest(about=original.get('about','')))
         except: pass
         ent7al_users[phone] = False; ent7al_original[phone] = {}
-        await event.edit("**• ✅ تم إلغاء الانتحال**")
+        await event.edit("**• ✅ تم إلغاء الانتحال**", parse_mode='markdown')
 
     # ============== مراقبة الخاص ==============
     @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private and not e.out))
