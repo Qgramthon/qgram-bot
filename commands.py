@@ -134,8 +134,9 @@ def clean_filename(name):
     name = re.sub(r'\s+', ' ', name).strip()
     return name[:100]
 
-# ============== دوال التحميل من يوتيوب ==============
+# ============== دوال التحميل من يوتيوب - المعدلة ==============
 def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
+    """تحميل من يوتيوب مع استخراج المعلومات الصحيحة"""
     if not YTDLP_AVAILABLE:
         raise ValueError("مكتبة yt-dlp غير مثبتة")
     
@@ -160,6 +161,7 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'quiet': True,
             'no_warnings': True,
             'max_filesize': 50 * 1024 * 1024,
+            'extract_flat': False,  # مهم: استخراج المعلومات الكاملة
         }
     else:
         ydl_opts = {
@@ -169,12 +171,29 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'no_warnings': True,
             'max_filesize': 100 * 1024 * 1024,
             'merge_output_format': 'mp4',
+            'extract_flat': False,  # مهم: استخراج المعلومات الكاملة
         }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=True)
+            # الخطوة 1: استخراج المعلومات أولاً بدون تحميل
+            info_dict = ydl.extract_info(query, download=False)
             
+            # التعامل مع قوائم التشغيل والبحث
+            if 'entries' in info_dict:
+                info_dict = info_dict['entries'][0]
+            
+            # استخراج المعلومات الصحيحة
+            title = info_dict.get('title', 'بدون عنوان')
+            uploader = info_dict.get('uploader', 'غير معروف')
+            duration = info_dict.get('duration', 0)
+            
+            logger.info(f"تم استخراج المعلومات: {title} - {uploader} - {duration}s")
+            
+            # الخطوة 2: التحميل الفعلي
+            info_dict = ydl.extract_info(query, download=True)
+            
+            # البحث عن الملف المحمل
             prefix = 'audio_' if audio_only else 'video_'
             files = [f for f in os.listdir(out_dir) if f.startswith(f'{prefix}{timestamp}')]
             
@@ -186,13 +205,13 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             if not os.path.exists(filepath) or os.path.getsize(filepath) < 1024:
                 raise ValueError("الملف تالف")
             
-            title = info.get('title', 'بدون عنوان')
-            uploader = info.get('uploader', 'غير معروف')
-            duration = info.get('duration', 0)
+            # التأكد من القيم
+            if duration == 0 and 'duration' in info_dict:
+                duration = info_dict.get('duration', 0)
             
             return {
-                'title': clean_filename(title),
-                'uploader': clean_filename(uploader),
+                'title': title,
+                'uploader': uploader,
                 'duration': duration,
                 'duration_str': format_duration(duration),
                 'size': os.path.getsize(filepath),
@@ -406,7 +425,7 @@ async def setup_handlers(client, phone):
         
         await event.edit(msg)
 
-    # ============== أمر .يوت (تحميل صوت) ==============
+    # ============== أمر .يوت (تحميل صوت) - المعدل ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.يوت (.+)'))
     async def youtube_audio(event):
         if not YTDLP_AVAILABLE:
@@ -429,10 +448,11 @@ async def setup_handlers(client, phone):
                 _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, True
             )
             
+            # استخدام الاسم الأصلي والمدة الصحيحة
             title = info['title']
             if len(title) > 55:
                 title = title[:52] + '...'
-            dur = format_duration(info['duration'])
+            dur = info['duration_str']  # المدة الصحيحة
             caption = f"{title}\n• {dur} | ᥲᥙძᎥ᥆"
             
             await client.send_file(
@@ -441,9 +461,9 @@ async def setup_handlers(client, phone):
                 caption=caption,
                 attributes=[
                     DocumentAttributeAudio(
-                        duration=info['duration'],
-                        title=info['title'],
-                        performer=info['uploader']
+                        duration=info['duration'],  # المدة الصحيحة بالثواني
+                        title=info['title'],  # الاسم الأصلي
+                        performer=info['uploader']  # اسم القناة
                     )
                 ],
                 supports_streaming=True
@@ -457,7 +477,7 @@ async def setup_handlers(client, phone):
             safe_remove(filepath)
             clean_temp_files()
 
-    # ============== أمر .فيد (تحميل فيديو) ==============
+    # ============== أمر .فيد (تحميل فيديو) - المعدل ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فيد (.+)'))
     async def video_download(event):
         if not YTDLP_AVAILABLE:
@@ -480,10 +500,11 @@ async def setup_handlers(client, phone):
                 _DOWNLOAD_EXECUTOR, download_youtube_media, query, TEMP_DIR, False
             )
             
+            # استخدام الاسم الأصلي والمدة الصحيحة
             title = info['title']
             if len(title) > 55:
                 title = title[:52] + '...'
-            dur = format_duration(info['duration'])
+            dur = info['duration_str']  # المدة الصحيحة
             caption = f"{title}\n• {dur} | ᥎Ꭵძꫀ᥆"
             
             await client.send_file(
@@ -492,7 +513,7 @@ async def setup_handlers(client, phone):
                 caption=caption,
                 attributes=[
                     DocumentAttributeVideo(
-                        duration=info['duration'],
+                        duration=info['duration'],  # المدة الصحيحة بالثواني
                         w=0,
                         h=0,
                         supports_streaming=True
