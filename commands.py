@@ -65,7 +65,7 @@ try:
 except ImportError:
     YTDLP_AVAILABLE = False
 
-_DOWNLOAD_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="dl")
+_DOWNLOAD_EXECUTOR = ThreadPoolExecutor(max_workers=5, thread_name_prefix="dl")
 message_cache = {}
 active_animations = {}
 MIN_FREE_SPACE_MB = 50
@@ -138,28 +138,62 @@ def apply_telegram_format(text, format_type):
     elif format_type == 'strike': return f"~~{text}~~"
     return text
 
-# ============== دوال الزخرفة ==============
-FONT_STYLES_MAP = {
-    'bold': {
-        'A':'𝗔','B':'𝗕','C':'𝗖','D':'𝗗','E':'𝗘','F':'𝗙','G':'𝗚','H':'𝗛','I':'𝗜','J':'𝗝','K':'𝗞','L':'𝗟','M':'𝗠','N':'𝗡','O':'𝗢','P':'𝗣','Q':'𝗤','R':'𝗥','S':'𝗦','T':'𝗧','U':'𝗨','V':'𝗩','W':'𝗪','X':'𝗫','Y':'𝗬','Z':'𝗭',
-        'a':'𝗮','b':'𝗯','c':'𝗰','d':'𝗱','e':'𝗲','f':'𝗳','g':'𝗴','h':'𝗵','i':'𝗶','j':'𝗷','k':'𝗸','l':'𝗹','m':'𝗺','n':'𝗻','o':'𝗼','p':'𝗽','q':'𝗾','r':'𝗿','s':'𝘀','t':'𝘁','u':'𝘂','v':'𝘃','w':'𝘄','x':'𝘅','y':'𝘆','z':'𝘇',
+# ============== دوال الزخرفة المتكاملة ==============
+DECORATION_STYLES = {
+    'style1': {
+        'A':'𝗔','B':'𝗕','C':'𝗖','D':'𝗗','E':'𝗘','F':'𝗙','G':'𝗚','H':'𝗛','I':'𝗜','J':'𝗝','K':'𝗞','L':'𝗟','M':'𝗠',
+        'N':'𝗡','O':'𝗢','P':'𝗣','Q':'𝗤','R':'𝗥','S':'𝗦','T':'𝗧','U':'𝗨','V':'𝗩','W':'𝗪','X':'𝗫','Y':'𝗬','Z':'𝗭',
+        'a':'𝗮','b':'𝗯','c':'𝗰','d':'𝗱','e':'𝗲','f':'𝗳','g':'𝗴','h':'𝗵','i':'𝗶','j':'𝗷','k':'𝗸','l':'𝗹','m':'𝗺',
+        'n':'𝗻','o':'𝗼','p':'𝗽','q':'𝗾','r':'𝗿','s':'𝘀','t':'𝘁','u':'𝘂','v':'𝘃','w':'𝘄','x':'𝘅','y':'𝘆','z':'𝘇',
     },
-    'double': {
-        'A':'𝔸','B':'𝔹','C':'ℂ','D':'𝔻','E':'𝔼','F':'𝔽','G':'𝔾','H':'ℍ','I':'𝕀','J':'𝕁','K':'𝕂','L':'𝕃','M':'𝕄','N':'ℕ','O':'𝕆','P':'ℙ','Q':'ℚ','R':'ℝ','S':'𝕊','T':'𝕋','U':'𝕌','V':'𝕍','W':'𝕎','X':'𝕏','Y':'𝕐','Z':'ℤ',
-        'a':'𝕒','b':'𝕓','c':'𝕔','d':'𝕕','e':'𝕖','f':'𝕗','g':'𝕘','h':'𝕙','i':'𝕚','j':'𝕛','k':'𝕜','l':'𝕝','m':'𝕞','n':'𝕟','o':'𝕠','p':'𝕡','q':'𝕢','r':'𝕣','s':'𝕤','t':'𝕥','u':'𝕦','v':'𝕧','w':'𝕨','x':'𝕩','y':'𝕪','z':'𝕫',
+    'style2': {
+        'A':'𝐀','B':'𝐁','C':'𝐂','D':'𝐃','E':'𝐄','F':'𝐅','G':'𝐆','H':'𝐇','I':'𝐈','J':'𝐉','K':'𝐊','L':'𝐋','M':'𝐌',
+        'N':'𝐍','O':'𝐎','P':'𝐏','Q':'𝐐','R':'𝐑','S':'𝐒','T':'𝐓','U':'𝐔','V':'𝐕','W':'𝐖','X':'𝐗','Y':'𝐘','Z':'𝐙',
+        'a':'𝐚','b':'𝐛','c':'𝐜','d':'𝐝','e':'𝐞','f':'𝐟','g':'𝐠','h':'𝐡','i':'𝐢','j':'𝐣','k':'𝐤','l':'𝐥','m':'𝐦',
+        'n':'𝐧','o':'𝐨','p':'𝐩','q':'𝐪','r':'𝐫','s':'𝐬','t':'𝐭','u':'𝐮','v':'𝐯','w':'𝐰','x':'𝐱','y':'𝐲','z':'𝐳',
     },
-    'smallcaps': {
-        'A':'ᴀ','B':'ʙ','C':'ᴄ','D':'ᴅ','E':'ᴇ','F':'ꜰ','G':'ɢ','H':'ʜ','I':'ɪ','J':'ᴊ','K':'ᴋ','L':'ʟ','M':'ᴍ','N':'ɴ','O':'ᴏ','P':'ᴘ','Q':'ǫ','R':'ʀ','S':'ꜱ','T':'ᴛ','U':'ᴜ','V':'ᴠ','W':'ᴡ','X':'x','Y':'ʏ','Z':'ᴢ',
-        'a':'ᴀ','b':'ʙ','c':'ᴄ','d':'ᴅ','e':'ᴇ','f':'ꜰ','g':'ɢ','h':'ʜ','i':'ɪ','j':'ᴊ','k':'ᴋ','l':'ʟ','m':'ᴍ','n':'ɴ','o':'ᴏ','p':'ᴘ','q':'ǫ','r':'ʀ','s':'ꜱ','t':'ᴛ','u':'ᴜ','v':'ᴠ','w':'ᴡ','x':'x','y':'ʏ','z':'ᴢ',
-    }
+    'style3': {
+        'A':'𝔸','B':'𝔹','C':'ℂ','D':'𝔻','E':'𝔼','F':'𝔽','G':'𝔾','H':'ℍ','I':'𝕀','J':'𝕁','K':'𝕂','L':'𝕃','M':'𝕄',
+        'N':'ℕ','O':'𝕆','P':'ℙ','Q':'ℚ','R':'ℝ','S':'𝕊','T':'𝕋','U':'𝕌','V':'𝕍','W':'𝕎','X':'𝕏','Y':'𝕐','Z':'ℤ',
+        'a':'𝕒','b':'𝕓','c':'𝕔','d':'𝕕','e':'𝕖','f':'𝕗','g':'𝕘','h':'𝕙','i':'𝕚','j':'𝕛','k':'𝕜','l':'𝕝','m':'𝕞',
+        'n':'𝕟','o':'𝕠','p':'𝕡','q':'𝕢','r':'𝕣','s':'𝕤','t':'𝕥','u':'𝕦','v':'𝕧','w':'𝕨','x':'𝕩','y':'𝕪','z':'𝕫',
+    },
+    'style4': {
+        'A':'ᴀ','B':'ʙ','C':'ᴄ','D':'ᴅ','E':'ᴇ','F':'ꜰ','G':'ɢ','H':'ʜ','I':'ɪ','J':'ᴊ','K':'ᴋ','L':'ʟ','M':'ᴍ',
+        'N':'ɴ','O':'ᴏ','P':'ᴘ','Q':'ǫ','R':'ʀ','S':'ꜱ','T':'ᴛ','U':'ᴜ','V':'ᴠ','W':'ᴡ','X':'x','Y':'ʏ','Z':'ᴢ',
+        'a':'ᴀ','b':'ʙ','c':'ᴄ','d':'ᴅ','e':'ᴇ','f':'ꜰ','g':'ɢ','h':'ʜ','i':'ɪ','j':'ᴊ','k':'ᴋ','l':'ʟ','m':'ᴍ',
+        'n':'ɴ','o':'ᴏ','p':'ᴘ','q':'ǫ','r':'ʀ','s':'ꜱ','t':'ᴛ','u':'ᴜ','v':'ᴠ','w':'ᴡ','x':'x','y':'ʏ','z':'ᴢ',
+    },
+    'style5': {
+        'A':'ᗩ','B':'ᗷ','C':'ᑕ','D':'ᗞ','E':'ᗴ','F':'ᖴ','G':'Ǥ','H':'ᕼ','I':'Ꮖ','J':'ᒍ','K':'ᛕ','L':'ᒪ','M':'ᗰ',
+        'N':'ᑎ','O':'Ꭷ','P':'ᑭ','Q':'ᑫ','R':'ᖇ','S':'ᔑ','T':'Ꮏ','U':'ᑌ','V':'ᐯ','W':'ᗯ','X':'᙭','Y':'Ꭹ','Z':'ᘔ',
+        'a':'ᗩ','b':'ᗷ','c':'ᑕ','d':'ᗞ','e':'ᗴ','f':'ᖴ','g':'Ǥ','h':'ᕼ','i':'Ꮖ','j':'ᒍ','k':'ᛕ','l':'ᒪ','m':'ᗰ',
+        'n':'ᑎ','o':'Ꭷ','p':'ᑭ','q':'ᑫ','r':'ᖇ','s':'ᔑ','t':'Ꮏ','u':'ᑌ','v':'ᐯ','w':'ᗯ','x':'᙭','y':'Ꭹ','z':'ᘔ',
+    },
+    'style6': {
+        'A':'₳','B':'฿','C':'₵','D':'Đ','E':'Ɇ','F':'₣','G':'₲','H':'Ⱨ','I':'ł','J':'J','K':'₭','L':'Ⱡ','M':'₥',
+        'N':'₦','O':'Ø','P':'₱','Q':'Q','R':'Ɽ','S':'₴','T':'₮','U':'Ʉ','V':'V','W':'₩','X':'Ӿ','Y':'Ɏ','Z':'Ⱬ',
+        'a':'₳','b':'฿','c':'₵','d':'Đ','e':'Ɇ','f':'₣','g':'₲','h':'Ⱨ','i':'ł','j':'J','k':'₭','l':'Ⱡ','m':'₥',
+        'n':'₦','o':'Ø','p':'₱','q':'Q','r':'Ɽ','s':'₴','t':'₮','u':'Ʉ','v':'V','w':'₩','x':'Ӿ','y':'Ɏ','z':'Ⱬ',
+    },
+    'style7': {
+        'A':'Д','B':'Б','C':'Ͼ','D':'Ԃ','E':'Є','F':'Ғ','G':'Ԍ','H':'Ҥ','I':'Ї','J':'Ј','K':'Ҡ','L':'Լ','M':'Ӎ',
+        'N':'И','O':'Ф','P':'Ҏ','Q':'Ǫ','R':'Я','S':'Ϩ','T':'Г','U':'Ц','V':'Ѷ','W':'Ш','X':'Ж','Y':'Ұ','Z':'Ȥ',
+        'a':'д','b':'б','c':'ϲ','d':'ԁ','e':'є','f':'Ғ','g':'Ԍ','h':'ҥ','i':'ї','j':'ј','k':'ҡ','l':'Ӏ','m':'ӎ',
+        'n':'и','o':'ф','p':'ҏ','q':'ǫ','r':'я','s':'ϩ','t':'г','u':'ц','v':'ѷ','w':'ш','x':'ж','y':'ұ','z':'ȥ',
+    },
+    'style8': {
+        'a':'ᥲ','b':'ᑲ','c':'ᥴ','d':'ძ','e':'ꫀ','f':'ꓝ','g':'Ԍ','h':'ɦ','i':'Ꭵ','j':'ȷ','k':'κ','l':'ᥣ','m':'ꪔ',
+        'n':'ꪀ','o':'᥆','p':'ρ','q':'Ԛ','r':'ᖇ','s':'᥉','t':'ƚ','u':'ᥙ','v':'᥎','w':'᭙','x':'᥊','y':'𝛄','z':'ɀ',
+    },
 }
 
-def apply_font_style(text, style_name):
-    """تطبيق نمط الزخرفة على النص"""
-    if style_name not in FONT_STYLES_MAP:
+def apply_decoration(text, style_name):
+    """تطبيق الزخرفة على النص الإنجليزي فقط"""
+    if style_name not in DECORATION_STYLES:
         return text
     
-    style_map = FONT_STYLES_MAP[style_name]
+    style_map = DECORATION_STYLES[style_name]
     result = ''
     for char in text:
         if char in style_map:
@@ -207,8 +241,29 @@ def get_lying_comment(p):
     elif p >= 30: return "🙂 لا يعم ده غلبان صادق"
     else: return "😇 ده صادق جدا والله"
 
-HACK_MESSAGES = ["🔓 جاري اختراق الحساب...","📱 جاري الوصول للبيانات...","🔑 تم كسر كلمة المرور: ******","📸 جاري تحميل الصور الخاصة...","💬 جاري قراءة المحادثات...","📍 تم تحديد الموقع الجغرافي...","💰 جاري سرقة الرصيد...","✅ تم الاختراق بنجاح!","😈 كنت بهزر معاك يسطا"]
-KILL_MESSAGES = ["🔫 جاري التصويب...","💣 تم القاء قنبلة...","🚀 صاروخ في الطريق...","💀 الضربة القاضية...","🪦 تم الدفن...","👻 روحه طلعت...","😇 البقاء لله...","😂 كنت بهزر يا غلبان"]
+HACK_MESSAGES = [
+    "🔓 **جاري فتح المنافذ...**",
+    "📡 **تم الاتصال بالخادم الرئيسي**",
+    "🔍 **جاري فحص الثغرات الأمنية...**",
+    "💉 **تم حقن الكود الخبيث**",
+    "🔑 **جاري فك تشفير كلمة المرور...**",
+    "📂 **تم الوصول لقاعدة البيانات**",
+    "📊 **جاري سحب المعلومات...**",
+    "🛡️ **تم تجاوز جدار الحماية**",
+    "✅ **تم الاختراق بنجاح!**",
+    "⚠️ **النظام تحت السيطرة**"
+]
+
+KILL_METHODS = [
+    ["🔪 **جاري الطعن بالسكين...**", "🩸 **تم الطعن في القلب**", "☠️ **الضحية تنزف بشدة...**"],
+    ["🔫 **جاري التصويب بالمسدس...**", "💥 **تم إطلاق النار**", "🎯 **إصابة مباشرة في الرأس**"],
+    ["🚗 **جاري الدهس بالسيارة...**", "💨 **السيارة مسرعة نحو الهدف**", "💀 **تم الدهس بنجاح**"],
+    ["🏢 **جاري الدفع من مبنى مرتفع...**", "🪂 **لا توجد مظلة نجاة**", "💥 **تم السقوط من ارتفاع 50 طابق**"],
+    ["⚡ **جاري التكهرب...**", "🔌 **تم توصيل التيار**", "⚡ **صعق كهربائي مميت**"],
+    ["💣 **جاري التفجير...**", "🔥 **تم إشعال الفتيل**", "💥 **انفجار هائل**"],
+    ["🧪 **جاري التسميم...**", "☕ **تم وضع السم في المشروب**", "🤢 **السم ينتشر في الجسد**"],
+    ["🌊 **جاري الإغراق...**", "🏊 **الضحية لا تجيد السباحة**", "🫧 **تم الإغراق في المياه العميقة**"],
+]
 
 # ============== دوال الأنيمشن ==============
 def create_animation_pattern(emoji_list):
@@ -253,9 +308,8 @@ async def run_animation(event, animation_name, duration=5):
     finally:
         if anim_key in active_animations: del active_animations[anim_key]
 
-# ============== دوال البحث عن الصور - محسنة بالكامل ==============
+# ============== دوال البحث عن الصور ==============
 def search_images_google_serpapi(query: str, limit: int = 10) -> list:
-    """بحث باستخدام SerpAPI (Google Images) - أدق نتيجة"""
     images = []
     try:
         api_key = os.environ.get("SERPAPI_KEY", "")
@@ -272,141 +326,88 @@ def search_images_google_serpapi(query: str, limit: int = 10) -> list:
     except: pass
     
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
-        search_url = f"https://www.google.com/search?q={quote(query)}&tbm=isch&hl=en&safe=off&nfpr=1"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        search_url = f"https://www.google.com/search?q={quote(query)}&tbm=isch&hl=en&safe=off"
         resp = requests.get(search_url, headers=headers, timeout=15)
-        
         if resp.status_code == 200:
             matches = re.findall(r'"ou":"(https?://[^"]+)"', resp.text)
-            if not matches:
-                matches = re.findall(r'"src":"(https?://[^"]+)"', resp.text)
-            if not matches:
-                matches = re.findall(r'"(https?://[^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"', resp.text, re.I)
-            
             for url in matches:
-                if url.startswith('http') and not any(s in url.lower() for s in ['google', 'gstatic', '/favicon', '/icon', 'data:image']):
-                    if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']) or 'image' in url.lower():
-                        images.append(url)
-                        if len(images) >= limit: break
-    except Exception as e:
-        logger.error(f"Google search error: {e}")
-    
+                if url.startswith('http') and not any(s in url.lower() for s in ['google', 'gstatic', '/favicon']):
+                    images.append(url)
+                    if len(images) >= limit: break
+    except: pass
     return images
 
 def search_images_bing_api(query: str, limit: int = 10) -> list:
-    """بحث في Bing"""
     images = []
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml',
-        }
-        url = f"https://www.bing.com/images/search?q={quote(query)}&first=1&count={limit}&qft=+filterui:photo-photo&form=IRFLTR"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = f"https://www.bing.com/images/search?q={quote(query)}&first=1&count={limit}"
         resp = requests.get(url, headers=headers, timeout=15)
-        
         if resp.status_code == 200:
             matches = re.findall(r'murl&quot;:&quot;(https?://[^&]+)&quot;', resp.text)
-            if not matches:
-                matches = re.findall(r'src="(https?://[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"', resp.text, re.I)
-            
             for url in matches:
-                if url.startswith('http') and 'bing.com' not in url.lower():
+                if 'bing.com' not in url.lower():
                     images.append(url)
                     if len(images) >= limit: break
-    except Exception as e:
-        logger.error(f"Bing search error: {e}")
-    
+    except: pass
     return images
 
 def search_images_ddg(query: str, limit: int = 10) -> list:
-    """بحث في DuckDuckGo"""
     images = []
     try:
         from duckduckgo_search import DDGS
         with DDGS() as ddgs:
             results = list(ddgs.images(query, max_results=limit))
             images = [img["image"] for img in results if img.get("image")]
-    except:
-        pass
+    except: pass
     return images
 
 def search_all_images(query: str, limit: int = 5) -> list:
-    """بحث شامل من جميع المحركات مع تصفية دقيقة"""
     all_images = []
-    
     engines = [
         ("DuckDuckGo", search_images_ddg),
         ("Google", search_images_google_serpapi),
         ("Bing", search_images_bing_api),
     ]
-    
     for name, func in engines:
         try:
             results = func(query, limit=10)
-            if results:
-                logger.info(f"{name}: {len(results)} results for '{query}'")
-                all_images.extend(results)
-        except Exception as e:
-            logger.error(f"{name} failed: {e}")
+            if results: all_images.extend(results)
+        except: continue
     
     seen = set()
     unique = []
-    
-    blocked = ['icon', 'favicon', 'avatar', 'logo', 'thumb/32', 'thumb/64', 
-               'placeholder', '1x1', 'blank', 'transparent', 'pixel', 'spacer',
-               'data:image', 'svg', 'gstatic.com']
-    
+    blocked = ['icon', 'favicon', 'avatar', 'logo', 'thumb/32', 'thumb/64', 'gstatic.com']
     for url in all_images:
         url = url.strip()
         if not url.startswith('http'): continue
-        
         if any(b in url.lower() for b in blocked): continue
-        
-        is_image = any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'])
-        if not is_image:
-            if '.svg' in url.lower() or url.endswith('/'): continue
-        
         if url not in seen:
             seen.add(url)
             unique.append(url)
-            if len(unique) >= limit * 2: break
-    
-    logger.info(f"Unique images for '{query}': {len(unique)}")
+            if len(unique) >= limit: break
     
     if not unique and ' ' in query:
         parts = query.split()
         if len(parts) >= 2:
-            simple = ' '.join(parts[:2])
-            logger.info(f"Retrying with: {simple}")
-            return search_all_images(simple, limit)
+            return search_all_images(' '.join(parts[:2]), limit)
     
     return unique[:limit]
 
 def download_image_direct(url: str, out_dir: str) -> str:
-    """تحميل صورة"""
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.google.com/',
-            'Accept': 'image/webp,image/*,*/*;q=0.8',
-        }
+        headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.google.com/'}
         resp = requests.get(url, headers=headers, stream=True, timeout=30, allow_redirects=True)
         if resp.status_code != 200: return None
-        
         content_type = resp.headers.get('content-type', '').lower()
         ext = '.jpg'
         if 'png' in content_type: ext = '.png'
         elif 'webp' in content_type: ext = '.webp'
         elif 'gif' in content_type: ext = '.gif'
-        elif 'jpeg' in content_type: ext = '.jpg'
         
         filename = f"img_{int(time.time()*1000)}_{hashlib.md5(url.encode()).hexdigest()[:8]}{ext}"
         filepath = os.path.join(out_dir, filename)
-        
         size = 0
         with open(filepath, 'wb') as f:
             for chunk in resp.iter_content(8192):
@@ -416,21 +417,16 @@ def download_image_direct(url: str, out_dir: str) -> str:
                     if size > 15 * 1024 * 1024:
                         safe_remove(filepath)
                         return None
-        
         if size < 2048:
             safe_remove(filepath)
             return None
-        
         return filepath
-    except:
-        return None
+    except: return None
 
 # ============== دوال يوتيوب ==============
 def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
     if not YTDLP_AVAILABLE: raise ValueError("مكتبة yt-dlp غير مثبتة")
-    
     if not query.startswith("http"): query = f"ytsearch:{query}"
-    
     timestamp = int(time.time())
     
     if audio_only:
@@ -452,24 +448,18 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(query, download=False)
             if 'entries' in info_dict: info_dict = info_dict['entries'][0]
-            
             title = info_dict.get('title', 'بدون عنوان')
             uploader = info_dict.get('uploader', 'غير معروف')
             duration = info_dict.get('duration', 0)
-            
             info_dict = ydl.extract_info(query, download=True)
-            
             prefix = 'audio_' if audio_only else 'video_'
             files = [f for f in os.listdir(out_dir) if f.startswith(f'{prefix}{timestamp}')]
             if not files: raise ValueError("لم يتم العثور على الملف")
-            
             filepath = os.path.join(out_dir, files[0])
             if duration == 0: duration = info_dict.get('duration', 0)
-            
             return {
                 'title': title, 'uploader': uploader, 'duration': duration,
                 'duration_str': format_duration(duration),
-                'size': os.path.getsize(filepath), 'size_str': format_size(os.path.getsize(filepath)),
             }, filepath
     except Exception as e:
         for f in os.listdir(out_dir):
@@ -478,31 +468,19 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
 
 def convert_video_to_audio(video_path: str, out_dir: str):
     if not os.path.exists(video_path): raise ValueError("الملف غير موجود")
-    
     audio_path = os.path.join(out_dir, f"audio_conv_{int(time.time())}.mp3")
-    
     try:
         result = subprocess.run([
             'ffmpeg', '-i', video_path, '-vn', '-acodec', 'libmp3lame',
             '-ab', '192k', '-ar', '44100', '-y', audio_path
         ], capture_output=True, timeout=120)
-        
         if result.returncode != 0: raise ValueError("فشل التحويل")
-        
         duration = 0
         try:
-            probe = subprocess.run([
-                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1', video_path
-            ], capture_output=True, timeout=10)
+            probe = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_path], capture_output=True, timeout=10)
             if probe.returncode == 0: duration = float(probe.stdout.decode().strip())
         except: pass
-        
-        return {
-            'path': audio_path, 'duration': duration,
-            'duration_str': format_duration(duration),
-            'size': os.path.getsize(audio_path), 'size_str': format_size(os.path.getsize(audio_path)),
-        }
+        return {'path': audio_path, 'duration': duration, 'duration_str': format_duration(duration)}
     except:
         safe_remove(audio_path)
         raise
@@ -541,19 +519,48 @@ async def change_profile_photo(client, user_id, phone):
     except: return False, None
 
 async def resolve_user(event, client):
-    """حل معرف المستخدم من الرد أو اليوزر"""
     if event.is_reply:
         reply = await event.get_reply_message()
         try: return await client.get_entity(reply.sender_id)
         except: pass
-    
     text = event.text.split()
     if len(text) >= 2:
         username = text[1].strip('@')
         try: return await client.get_entity(username)
         except: pass
-    
     return None
+
+# ============== دالة قياس السرعة المحسنة ==============
+async def measure_speed():
+    """قياس سرعة النت بطريقة دقيقة"""
+    try:
+        # قياس البنق
+        start = time.time()
+        resp = requests.get("https://api.telegram.org", timeout=10)
+        ping = int((time.time() - start) * 1000)
+        
+        # قياس سرعة التحميل باستخدام ملف صغير
+        start = time.time()
+        resp = requests.get("http://ipv4.download.thinkbroadband.com/5MB.zip", stream=True, timeout=30)
+        size = 0
+        for chunk in resp.iter_content(8192):
+            size += len(chunk)
+            elapsed = time.time() - start
+            if elapsed > 8 or size > 5 * 1024 * 1024:
+                break
+        
+        if elapsed > 0:
+            speed_mbps = (size * 8) / (elapsed * 1000000)
+        else:
+            speed_mbps = 0
+        
+        return {
+            'ping': ping,
+            'speed': speed_mbps,
+            'success': True
+        }
+    except:
+        return {'success': False}
 
 # ============== إعداد المعالجات ==============
 async def setup_handlers(client, phone):
@@ -662,20 +669,33 @@ async def setup_handlers(client, phone):
         result = f"🤥 **نسبة كذب {name}:**\n{'█' * (p // 10)}{'░' * (10 - p // 10)} **{p}%**\n\n**{get_lying_comment(p)}**"
         await event.edit(result, parse_mode='markdown')
 
-    # ============== أوامر المزاح ==============
+    # ============== أوامر المزاح - المحسنة ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تهكير$'))
     async def fake_hack(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown'); return
+        reply = await event.get_reply_message()
+        user = await client.get_entity(reply.sender_id)
+        name = user.first_name or "المستخدم"
+        
         for msg in HACK_MESSAGES:
-            await event.edit(f"**{msg}**", parse_mode='markdown')
-            await asyncio.sleep(1.5)
+            await event.edit(msg, parse_mode='markdown')
+            await asyncio.sleep(1.2)
+        await event.edit(f"**✅ تمت السيطرة على حساب {name} بالكامل**", parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قتل$'))
     async def fake_kill(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على شخص**", parse_mode='markdown'); return
-        for msg in KILL_MESSAGES:
+        reply = await event.get_reply_message()
+        user = await client.get_entity(reply.sender_id)
+        name = user.first_name or "المستخدم"
+        
+        # اختيار طريقة قتل عشوائية
+        method = random.choice(KILL_METHODS)
+        
+        for msg in method:
             await event.edit(f"**{msg}**", parse_mode='markdown')
             await asyncio.sleep(1.5)
+        await event.edit(f"**💀 تم القضاء على {name}**\n**🪦 إنا لله وإنا إليه راجعون**", parse_mode='markdown')
 
     # ============== أوامر الإحصائيات ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.جروباتي$'))
@@ -752,101 +772,57 @@ async def setup_handlers(client, phone):
         except Exception as e: await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
         finally: safe_remove(filepath)
 
-    # ============== أمر .صوت ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.صوت$'))
     async def video_to_audio(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على فيديو**", parse_mode='markdown'); return
-        
         reply = await event.get_reply_message()
         if not (reply.video or reply.document): await event.edit("**• ❌ يرجى الرد على فيديو**", parse_mode='markdown'); return
-        
         await event.edit("**• 🎵 جاري تحويل الفيديو إلى صوت...**", parse_mode='markdown')
         video_path = audio_path = None
-        
         try:
             video_path = os.path.join(TEMP_DIR, f"video_{phone}_{int(time.time())}.mp4")
             await client.download_media(reply, video_path)
-            
             original_name = "فيديو محول"
-            if reply.video:
-                if hasattr(reply, 'message') and reply.message:
-                    original_name = reply.message[:100]
+            if reply.video and hasattr(reply, 'message') and reply.message: original_name = reply.message[:100]
             elif reply.document:
                 for attr in reply.document.attributes:
                     if hasattr(attr, 'file_name') and attr.file_name:
-                        original_name = os.path.splitext(attr.file_name)[0]
-                        break
-            
+                        original_name = os.path.splitext(attr.file_name)[0]; break
             audio_info = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, convert_video_to_audio, video_path, TEMP_DIR)
             audio_path = audio_info['path']
-            
             title = clean_filename(original_name)
             if len(title) > 55: title = title[:52] + '...'
-            dur = audio_info['duration_str']
-            caption = f"{title}\n• {dur} | ᥲᥙძᎥ᥆"
-            
-            await client.send_file(event.chat_id, audio_path,
-                                   caption=caption,
+            caption = f"{title}\n• {audio_info['duration_str']} | ᥲᥙძᎥ᥆"
+            await client.send_file(event.chat_id, audio_path, caption=caption,
                                    attributes=[DocumentAttributeAudio(duration=int(audio_info['duration']), title=title, performer='محول من فيديو')],
                                    supports_streaming=True)
             await event.delete()
-        except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
-        finally:
-            safe_remove(video_path); safe_remove(audio_path)
+        except Exception as e: await event.edit(f"**• ❌ {str(e)[:200]}**", parse_mode='markdown')
+        finally: safe_remove(video_path); safe_remove(audio_path)
 
-    # ============== أمر .نسخ ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نسخ$'))
     async def transcribe_voice(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على رسالة صوتية أو فيديو**", parse_mode='markdown'); return
-        
         reply = await event.get_reply_message()
-        
-        if not (reply.voice or reply.audio or reply.video):
-            await event.edit("**• ❌ يرجى الرد على رسالة صوتية أو فيديو**", parse_mode='markdown'); return
-        
+        if not (reply.voice or reply.audio or reply.video): await event.edit("**• ❌ يرجى الرد على رسالة صوتية أو فيديو**", parse_mode='markdown'); return
         if not SR_AVAILABLE: await event.edit("**• ❌ مكتبة SpeechRecognition غير مثبتة**", parse_mode='markdown'); return
-        
         await event.edit("**• 🎤 جاري تحويل المقطع إلى نص...**", parse_mode='markdown')
         media_path = wav_path = None
-        
         try:
             media_path = os.path.join(TEMP_DIR, f"media_{phone}_{int(time.time())}.ogg")
             await client.download_media(reply, media_path)
-            
-            if not os.path.exists(media_path) or os.path.getsize(media_path) < 100:
-                raise ValueError("فشل تحميل الملف")
-            
             wav_path = media_path.replace('.ogg', '.wav').replace('.mp4', '.wav')
-            result = subprocess.run(
-                ['ffmpeg', '-i', media_path, '-ac', '1', '-ar', '16000', '-sample_fmt', 's16', wav_path],
-                capture_output=True, timeout=30
-            )
-            
-            if result.returncode != 0 or not os.path.exists(wav_path):
-                raise ValueError("فشل تحويل الصوت")
-            
+            subprocess.run(['ffmpeg', '-i', media_path, '-ac', '1', '-ar', '16000', '-sample_fmt', 's16', wav_path], capture_output=True, timeout=30)
             recognizer = sr.Recognizer()
-            with sr.AudioFile(wav_path) as source:
-                audio_data = recognizer.record(source)
-            
+            with sr.AudioFile(wav_path) as source: audio_data = recognizer.record(source)
             text = None
             for lang in ['ar-AR', 'en-US']:
                 try: text = recognizer.recognize_google(audio_data, language=lang); break
                 except: continue
-            
-            if text: await event.edit(f"**📝 النص:**\n{text}")
-            else: await event.edit("**• ❌ لم يتم التعرف على أي نص**")
-                
-        except subprocess.CalledProcessError as e:
-            error_text = e.stderr.decode()[:100] if e.stderr else str(e)
-            await event.edit(f"**• ❌ فشل التحويل: {error_text}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ {str(e)[:150]}**")
-        finally:
-            safe_remove(media_path); safe_remove(wav_path)
+            await event.edit(f"**📝 النص:**\n{text}" if text else "**• ❌ لم يتم التعرف**")
+        except Exception as e: await event.edit(f"**• ❌ {str(e)[:150]}**")
+        finally: safe_remove(media_path); safe_remove(wav_path)
 
-    # ============== أمر .استيك ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.استيك$'))
     async def photo_to_sticker(event):
         if not event.is_reply or not PIL_AVAILABLE: await event.edit("**• ❌ يرجى الرد على صورة**", parse_mode='markdown'); return
@@ -858,11 +834,8 @@ async def setup_handlers(client, phone):
             img_path = os.path.join(TEMP_DIR, f"img_{phone}_{int(time.time())}.jpg")
             await client.download_media(reply, img_path)
             stick_path = img_path.replace('.jpg', '.webp')
-            im = Image.open(img_path).convert("RGBA")
-            im.thumbnail((512, 512), Image.LANCZOS)
-            im.save(stick_path, "WEBP", quality=80)
-            await client.send_file(event.chat_id, stick_path, force_document=False)
-            await event.delete()
+            im = Image.open(img_path).convert("RGBA"); im.thumbnail((512, 512), Image.LANCZOS); im.save(stick_path, "WEBP", quality=80)
+            await client.send_file(event.chat_id, stick_path, force_document=False); await event.delete()
         except Exception as e: await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally: safe_remove(img_path); safe_remove(stick_path)
 
@@ -874,102 +847,76 @@ async def setup_handlers(client, phone):
         await event.edit("**• 🔄 جاري التحويل...**", parse_mode='markdown')
         stick_path = img_path = None
         try:
-            stick_path = os.path.join(TEMP_DIR, f"sticker_{phone}_{int(time.time())}.webp")
-            await client.download_media(reply, stick_path)
-            img_path = stick_path.replace('.webp', '.png')
-            Image.open(stick_path).convert("RGBA").save(img_path, "PNG")
-            await client.send_file(event.chat_id, img_path)
-            await event.delete()
+            stick_path = os.path.join(TEMP_DIR, f"sticker_{phone}_{int(time.time())}.webp"); await client.download_media(reply, stick_path)
+            img_path = stick_path.replace('.webp', '.png'); Image.open(stick_path).convert("RGBA").save(img_path, "PNG")
+            await client.send_file(event.chat_id, img_path); await event.delete()
         except Exception as e: await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally: safe_remove(stick_path); safe_remove(img_path)
 
-    # ============== أمر .بن ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بن (.+)'))
     async def image_search(event):
         query = event.pattern_match.group(1).strip()
-        
         if query.startswith('http'):
             await event.edit("**• 📷 جاري تحميل الصورة...**", parse_mode='markdown')
             filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, query, TEMP_DIR)
-            if filepath:
-                await client.send_file(event.chat_id, filepath)
-                await event.delete()
-                safe_remove(filepath)
+            if filepath: await client.send_file(event.chat_id, filepath); await event.delete(); safe_remove(filepath)
             else: await event.edit("**• ❌ فشل تحميل الصورة**", parse_mode='markdown')
             return
-        
-        await event.edit(f"**• 🔍 جاري البحث عن '{query}' في 3 محركات...**", parse_mode='markdown')
-        urls = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, search_all_images, query, 10)
-        
-        if not urls:
-            await event.edit(f"**• ❌ لم يتم العثور على صور لـ '{query}'**\n**• جرب كلمات بحث أدق أو اسم مختلف**", parse_mode='markdown')
-            return
-        
-        await event.edit(f"**• ✅ تم العثور على {len(urls)} صورة**\n**• 📥 جاري تحميل وعرض الصور...**", parse_mode='markdown')
-        
+        await event.edit(f"**• 🔍 جاري البحث عن '{query}'...**", parse_mode='markdown')
+        urls = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, search_all_images, query, 15)
+        if not urls: await event.edit(f"**• ❌ لم يتم العثور على صور**", parse_mode='markdown'); return
+        await event.edit(f"**• ✅ تم العثور على {len(urls)} صورة**", parse_mode='markdown')
         success = 0
-        for i, url in enumerate(urls[:5], 1):
+        for url in urls[:5]:
             try:
                 filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, url, TEMP_DIR)
-                if filepath:
-                    await client.send_file(event.chat_id, filepath)
-                    success += 1
-                    safe_remove(filepath)
-                    if success < min(len(urls), 5):
-                        await event.edit(f"**• 📤 تم إرسال {success} من {min(len(urls), 5)} صورة...**", parse_mode='markdown')
+                if filepath: await client.send_file(event.chat_id, filepath); success += 1; safe_remove(filepath)
                 await asyncio.sleep(0.3)
-            except Exception as e:
-                logger.error(f"Failed image {i}: {e}")
-                continue
-        
+            except: continue
         if success > 0: await event.delete()
-        else: await event.edit(f"**• ❌ فشل تحميل صور '{query}'**\n**• جرب مرة أخرى**", parse_mode='markdown')
+        else: await event.edit("**• ❌ فشل تحميل الصور**", parse_mode='markdown')
 
-    # ============== أمر .ترجم ==============
-    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ترجم (.+)'))
+    # ============== أمر .ترجم - يدعم الربلاي ==============
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ترجم(?: (.+))?$'))
     async def translate_cmd(event):
-        text = event.pattern_match.group(1).strip()
-        if not text: await event.edit("**• ❌ اكتب كلمة للترجمة**"); return
+        text = None
+        if event.is_reply:
+            reply = await event.get_reply_message()
+            text = reply.text if reply.text else None
+        
+        if not text and event.pattern_match.group(1):
+            text = event.pattern_match.group(1).strip()
+        
+        if not text:
+            await event.edit("**• ❌ يرجى الرد على رسالة أو كتابة نص للترجمة**")
+            return
+        
         await event.edit("**• 🔄 جاري الترجمة...**")
         translated = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, translate_text, text)
         await event.edit(f"**• الترجمة:**\n{translated}")
 
-    # ============== أمر .نت ==============
+    # ============== أمر .نت - المحسن ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نت$'))
     async def speed_test(event):
         await event.edit("**• 📶 جاري قياس سرعة النت...**")
-        try:
-            start = time.time()
-            resp = requests.get("https://www.google.com", timeout=10)
-            ping = int((time.time() - start) * 1000)
-            
-            start = time.time()
-            resp = requests.get("https://speed.hetzner.de/100MB.bin", stream=True, timeout=30)
-            size = 0
-            for chunk in resp.iter_content(8192):
-                size += len(chunk)
-                if time.time() - start > 5: break
-            
-            speed = (size * 8) / (time.time() - start) / 1000000
-            await event.edit(f"**📶 نتيجة القياس:**\n**• البنق:** {ping}ms\n**• السرعة:** {speed:.1f} Mbps")
-        except:
-            await event.edit("**• ❌ فشل قياس السرعة**")
+        result = await measure_speed()
+        if result['success']:
+            await event.edit(f"**📶 نتيجة القياس:**\n**• البنق:** {result['ping']}ms\n**• سرعة التحميل:** {result['speed']:.1f} Mbps")
+        else:
+            await event.edit("**• ❌ فشل قياس سرعة النت - تأكد من اتصالك**")
 
-    # ============== أمر .خرفة ==============
+    # ============== أمر .خرفة - الزخارف الإنجليزية ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.خرفة (.+)'))
     async def decorate_text(event):
         text = event.pattern_match.group(1).strip()
         if not text: await event.edit("**• ❌ اكتب نص للزخرفة**"); return
         
-        styles = {
-            '𝗕𝗼𝗹𝗱': apply_font_style(text, 'bold'),
-            '𝔻𝕠𝕦𝕓𝕝𝕖': apply_font_style(text, 'double'),
-            'Sᴍᴀʟʟᴄᴀᴘs': apply_font_style(text, 'smallcaps'),
-        }
-        
+        style_names = list(DECORATION_STYLES.keys())
         results = [f"**🎨 زخرفة '{text}':**\n"]
-        for name, decorated in styles.items():
-            results.append(f"**{name}:** `{decorated}`")
+        
+        for i, style_name in enumerate(style_names, 1):
+            decorated = apply_decoration(text, style_name)
+            results.append(f"**{i}.** `{decorated}`")
         
         await event.edit('\n'.join(results), parse_mode='markdown')
 
@@ -986,11 +933,9 @@ async def setup_handlers(client, phone):
                 mentions.append(f"[\u200b](tg://user?id={user.id}){name}")
             else: break
         if mentions:
-            chunk_size = 5
-            for i in range(0, len(mentions), chunk_size):
+            for i in range(0, len(mentions), 5):
                 if not tagging_active.get(phone): break
-                chunk = mentions[i:i+chunk_size]
-                await client.send_message(event.chat_id, ''.join(chunk))
+                await client.send_message(event.chat_id, ''.join(mentions[i:i+5]))
                 await asyncio.sleep(1)
         await event.delete()
 
@@ -1004,17 +949,14 @@ async def setup_handlers(client, phone):
         await event.edit("**• 📋 جاري جلب قائمة المحظورين...**")
         try:
             blocked = await client(GetBlockedRequest(offset=0, limit=100))
-            if not blocked.users:
-                await event.edit("**• 📋 لا يوجد محظورين**")
-                return
+            if not blocked.users: await event.edit("**• 📋 لا يوجد محظورين**"); return
             result = "**📋 قائمة المحظورين:**\n"
             for user in blocked.users[:20]:
                 name = user.first_name or ''
                 if user.last_name: name += f" {user.last_name}"
                 result += f"• [{name}](tg://user?id={user.id})\n"
             await event.edit(result)
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حظر$'))
     async def block_user(event):
@@ -1023,8 +965,7 @@ async def setup_handlers(client, phone):
         try:
             await client(BlockRequest(id=target))
             await event.edit(f"**• 🚫 تم حظر {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غ حظر$'))
     async def unblock_user(event):
@@ -1033,8 +974,7 @@ async def setup_handlers(client, phone):
         try:
             await client(UnblockRequest(id=target))
             await event.edit(f"**• ✅ تم فك حظر {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.كتم$'))
     async def mute_user_cmd(event):
@@ -1046,8 +986,7 @@ async def setup_handlers(client, phone):
                 await client(EditBannedRequest(event.chat_id, target.id, rights))
             muted_users[phone][target.id] = time.time()
             await event.edit(f"**• 🤐 تم كتم {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.قيد$'))
     async def restrict_user(event):
@@ -1058,8 +997,7 @@ async def setup_handlers(client, phone):
             rights = ChatBannedRights(until_date=None, send_messages=True, send_media=True, send_stickers=True, send_gifs=True, send_games=True, send_inline=True, embed_links=True)
             await client(EditBannedRequest(event.chat_id, target.id, rights))
             await event.edit(f"**• 🔒 تم تقييد {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.طرد$'))
     async def kick_user(event):
@@ -1069,8 +1007,7 @@ async def setup_handlers(client, phone):
         try:
             await client.kick_participant(event.chat_id, target.id)
             await event.edit(f"**• 👢 تم طرد {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     # ============== أوامر المحظورين والمكتومين ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.محظورين$'))
@@ -1079,13 +1016,10 @@ async def setup_handlers(client, phone):
         await event.edit("**• 📋 جاري جلب المحظورين...**")
         try:
             banned = await client(GetParticipantsRequest(event.chat_id, types.ChannelParticipantsKicked(), 0, 100, 0))
-            if not banned.users:
-                await event.edit("**• 📋 لا يوجد محظورين**")
-                return
+            if not banned.users: await event.edit("**• 📋 لا يوجد محظورين**"); return
             result = "**📋 المحظورين:**\n"
             for user in banned.users[:20]:
-                name = user.first_name or ''
-                result += f"• [{name}](tg://user?id={user.id})\n"
+                result += f"• [{user.first_name or ''}](tg://user?id={user.id})\n"
             await event.edit(result)
         except: await event.edit("**• ❌ فشل**")
 
@@ -1097,8 +1031,7 @@ async def setup_handlers(client, phone):
         try:
             await client(EditBannedRequest(event.chat_id, target.id, ChatBannedRights(until_date=None)))
             await event.edit(f"**• ✅ تم فك حظر {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فك محظورين$'))
     async def unban_all(event):
@@ -1107,9 +1040,7 @@ async def setup_handlers(client, phone):
         try:
             banned = await client(GetParticipantsRequest(event.chat_id, types.ChannelParticipantsKicked(), 0, 200, 0))
             for user in banned.users:
-                try:
-                    await client(EditBannedRequest(event.chat_id, user.id, ChatBannedRights(until_date=None)))
-                    await asyncio.sleep(0.5)
+                try: await client(EditBannedRequest(event.chat_id, user.id, ChatBannedRights(until_date=None))); await asyncio.sleep(0.5)
                 except: continue
             await event.edit("**• ✅ تم فك حظر الجميع**")
         except: await event.edit("**• ❌ فشل**")
@@ -1121,10 +1052,8 @@ async def setup_handlers(client, phone):
         if not target: await event.edit("**• ❌ يرجى الرد على شخص أو كتابة اليوزر**"); return
         try:
             await client(EditBannedRequest(event.chat_id, target.id, ChatBannedRights(until_date=None)))
-            if target.id in muted_users.get(phone, {}): del muted_users[phone][target.id]
             await event.edit(f"**• ✅ تم فك كتم {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فك مكتومين$'))
     async def unmute_all(event):
@@ -1132,9 +1061,7 @@ async def setup_handlers(client, phone):
         await event.edit("**• 🔄 جاري فك كتم الجميع...**")
         try:
             async for user in client.iter_participants(event.chat_id):
-                try:
-                    await client(EditBannedRequest(event.chat_id, user.id, ChatBannedRights(until_date=None)))
-                    if user.id in muted_users.get(phone, {}): del muted_users[phone][user.id]
+                try: await client(EditBannedRequest(event.chat_id, user.id, ChatBannedRights(until_date=None)))
                 except: continue
             await event.edit("**• ✅ تم فك كتم الجميع**")
         except: await event.edit("**• ❌ فشل**")
@@ -1147,8 +1074,7 @@ async def setup_handlers(client, phone):
         try:
             await client(EditBannedRequest(event.chat_id, target.id, ChatBannedRights(until_date=None)))
             await event.edit(f"**• ✅ تم فك تقييد {target.first_name or 'المستخدم'}**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فك مقيدين$'))
     async def unrestrict_all(event):
@@ -1175,29 +1101,65 @@ async def setup_handlers(client, phone):
         info += f"\n**• ID:** `{target.id}`"
         await event.edit(info, parse_mode='markdown')
 
+    # ============== أمر .انشاء - المحسن ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.انشاء$'))
     async def creation_date(event):
-        target = await resolve_user(event, client)
+        target = None
+        if event.is_reply:
+            reply = await event.get_reply_message()
+            try: target = await client.get_entity(reply.sender_id)
+            except: pass
+        elif event.is_private:
+            try: target = await client.get_entity(event.chat_id)
+            except: pass
+        elif event.is_group or event.is_channel:
+            try: target = await client.get_entity(event.chat_id)
+            except: pass
+        
         if not target:
-            if event.is_group: target = await client.get_entity(event.chat_id)
-            elif event.is_private: target = await client.get_entity(event.chat_id)
+            await event.edit("**• ❌ لا يمكن تحديد تاريخ الإنشاء**")
+            return
         
         if hasattr(target, 'date') and target.date:
             date = target.date.strftime('%Y-%m-%d %H:%M:%S')
-            await event.edit(f"**📅 تاريخ الإنشاء:** {date}")
+            entity_type = "الحساب" if hasattr(target, 'username') and not target.broadcast else "القناة" if hasattr(target, 'broadcast') and target.broadcast else "الجروب"
+            await event.edit(f"**📅 تاريخ إنشاء {entity_type}:**\n{date}")
         else:
-            await event.edit("**• ❌ لا يمكن تحديد تاريخ الإنشاء**")
+            await event.edit("**• ❌ لا يمكن تحديد تاريخ الإنشاء لهذا النوع**")
 
+    # ============== أمر .عدد - يعمل في جميع المحادثات ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.عدد$'))
     async def message_count(event):
-        if not event.is_group: await event.edit("**• ❌ الأمر يعمل في الجروبات فقط**"); return
-        target = await resolve_user(event, client)
-        if not target: await event.edit("**• ❌ يرجى الرد على شخص**"); return
+        target = None
+        chat = event.chat_id
+        
+        if event.is_reply:
+            reply = await event.get_reply_message()
+            try: target = await client.get_entity(reply.sender_id)
+            except: pass
+        else:
+            try: target = await client.get_me()
+            except: pass
+        
+        if not target:
+            await event.edit("**• ❌ يرجى الرد على شخص أو استخدام الأمر مباشرة**")
+            return
+        
         count = 0
-        async for msg in client.iter_messages(event.chat_id, from_user=target.id):
-            count += 1
-            if count >= 1000: break
-        await event.edit(f"**📊 عدد رسائل {target.first_name or 'المستخدم'}:** {count}")
+        try:
+            async for msg in client.iter_messages(chat, from_user=target.id):
+                count += 1
+                if count >= 10000: break
+        except:
+            try:
+                async for msg in client.iter_messages(chat):
+                    if msg.sender_id == target.id:
+                        count += 1
+                        if count >= 10000: break
+            except: pass
+        
+        name = target.first_name or 'المستخدم'
+        await event.edit(f"**📊 عدد رسائل {name}:** {count}")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.رتبة$'))
     async def user_rank(event):
@@ -1231,8 +1193,7 @@ async def setup_handlers(client, phone):
         try:
             await client(DeleteHistoryRequest(peer=target, max_id=0, just_clear=False, revoke=True))
             await event.edit("**• ✅ تم حذف المحادثة من الطرفين**")
-        except Exception as e:
-            await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     # ============== أوامر الجروب ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.فتح$'))
@@ -1262,7 +1223,7 @@ async def setup_handlers(client, phone):
             rights = ChatAdminRights(post_messages=True, delete_messages=True, ban_users=True, invite_users=True, pin_messages=True, add_admins=False, anonymous=False, manage_call=True)
             await client(EditAdminRequest(event.chat_id, target.id, rights, "مشرف"))
             await event.edit(f"**• ⭐ تم رفع {target.first_name or 'المستخدم'} مشرف**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اد$'))
     async def promote_admin(event):
@@ -1273,7 +1234,7 @@ async def setup_handlers(client, phone):
             rights = ChatAdminRights(post_messages=True, delete_messages=True, ban_users=True, invite_users=True, pin_messages=True, add_admins=True, anonymous=False, manage_call=True, other=True)
             await client(EditAdminRequest(event.chat_id, target.id, rights, "أدمن"))
             await event.edit(f"**• 👑 تم رفع {target.first_name or 'المستخدم'} أدمن**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.مالك$'))
     async def promote_owner(event):
@@ -1284,7 +1245,7 @@ async def setup_handlers(client, phone):
             rights = ChatAdminRights(post_messages=True, delete_messages=True, ban_users=True, invite_users=True, pin_messages=True, add_admins=True, anonymous=True, manage_call=True, other=True)
             await client(EditAdminRequest(event.chat_id, target.id, rights, "مالك"))
             await event.edit(f"**• 🤴 تم رفع {target.first_name or 'المستخدم'} مالك**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تن$'))
     async def demote_all(event):
@@ -1294,7 +1255,7 @@ async def setup_handlers(client, phone):
         try:
             await client(EditAdminRequest(event.chat_id, target.id, ChatAdminRights(), ""))
             await event.edit(f"**• ⬇️ تم تنزيل {target.first_name or 'المستخدم'}**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     # ============== أوامر الإضافة والتسجيل ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ضيف (\d+)$'))
@@ -1314,8 +1275,7 @@ async def setup_handlers(client, phone):
                             await client(InviteToChannelRequest(event.chat_id, [user.id]))
                             added += 1
                             await asyncio.sleep(3)
-                        except FloodWaitError as e:
-                            await asyncio.sleep(e.seconds + 1)
+                        except FloodWaitError as e: await asyncio.sleep(e.seconds + 1)
                         except: continue
                 except: continue
         await event.edit(f"**• ✅ تم إضافة {added} عضو**")
@@ -1331,7 +1291,7 @@ async def setup_handlers(client, phone):
         try:
             await client(AddContactRequest(id=target, first_name=target.first_name or '', last_name=target.last_name or '', phone='', add_phone_privacy_exception=False))
             await event.edit(f"**• 📇 تم تسجيل {target.first_name or 'المستخدم'} في جهات الاتصال**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ممول (\d+) (.+)$'))
     async def fund_add(event):
@@ -1340,7 +1300,6 @@ async def setup_handlers(client, phone):
         username = event.pattern_match.group(2).strip('@')
         try: target_group = await client.get_entity(username)
         except: await event.edit(f"**• ❌ لم يتم العثور على {username}**"); return
-        
         await event.edit(f"**• 📥 جاري تسجيل {count} عضو...**")
         added = 0
         try:
@@ -1350,8 +1309,7 @@ async def setup_handlers(client, phone):
                     await client(InviteToChannelRequest(target_group, [user.id]))
                     added += 1
                     await asyncio.sleep(2)
-                except FloodWaitError as e:
-                    await asyncio.sleep(e.seconds + 1)
+                except FloodWaitError as e: await asyncio.sleep(e.seconds + 1)
                 except: continue
         except: pass
         await event.edit(f"**• ✅ تم تسجيل {added} عضو في {username}**")
@@ -1361,9 +1319,8 @@ async def setup_handlers(client, phone):
     async def leave_group(event):
         if not event.is_group: await event.edit("**• ❌ الأمر يعمل في الجروبات فقط**"); return
         try:
-            await event.edit("**• 👋 جاري الخروج...**")
             await client.delete_dialog(event.chat_id)
-        except: await event.edit("**• ❌ فشل**")
+        except: pass
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ادمنز$'))
     async def admin_list(event):
@@ -1372,8 +1329,7 @@ async def setup_handlers(client, phone):
         admins = []
         async for admin in client.iter_participants(event.chat_id, filter=ChannelParticipantsAdmins):
             admins.append(f"• {admin.first_name or ''} {'@'+admin.username if admin.username else ''}")
-        if admins: await event.edit("**👑 الأدمنز:**\n" + '\n'.join(admins[:20]))
-        else: await event.edit("**• ❌ لا يوجد أدمنز**")
+        await event.edit("**👑 الأدمنز:**\n" + '\n'.join(admins[:20]) if admins else "**• ❌ لا يوجد أدمنز**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.نيم (.+)'))
     async def set_name(event):
@@ -1387,7 +1343,7 @@ async def setup_handlers(client, phone):
             try:
                 await client(UpdateProfileRequest(first_name=name))
                 await event.edit(f"**• ✅ تم تغيير الاسم إلى {name}**")
-            except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+            except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بايو (.+)'))
     async def set_bio(event):
@@ -1395,7 +1351,7 @@ async def setup_handlers(client, phone):
         try:
             await client(UpdateProfileRequest(about=bio[:70]))
             await event.edit("**• ✅ تم تحديث البايو**")
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.صورة$'))
     async def set_photo(event):
@@ -1411,7 +1367,7 @@ async def setup_handlers(client, phone):
                 await client(UploadProfilePhotoRequest(file=uploaded))
             await event.edit("**• ✅ تم تحديث الصورة**")
             safe_remove(photo)
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.تابع (.+)'))
     async def stalk_user(event):
@@ -1433,7 +1389,7 @@ async def setup_handlers(client, phone):
                             await event.edit(f"**• 🔴 {target.first_name or username} أصبح أوفلاين**")
                             break
                 await asyncio.sleep(10)
-        except Exception as e: await event.edit(f"**• ❌ فشل: {str(e)[:100]}**")
+        except: await event.edit("**• ❌ فشل**")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.غ تابع$'))
     async def stop_stalk(event):
@@ -1444,8 +1400,7 @@ async def setup_handlers(client, phone):
     async def pin_message(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على رسالة**"); return
         try:
-            reply = await event.get_reply_message()
-            await reply.pin()
+            await (await event.get_reply_message()).pin()
             await event.edit("**• 📌 تم تثبيت الرسالة**")
         except: await event.edit("**• ❌ فشل**")
 
@@ -1453,8 +1408,7 @@ async def setup_handlers(client, phone):
     async def unpin_message(event):
         if not event.is_reply: await event.edit("**• ❌ يرجى الرد على رسالة**"); return
         try:
-            reply = await event.get_reply_message()
-            await reply.unpin()
+            await (await event.get_reply_message()).unpin()
             await event.edit("**• ✅ تم إلغاء التثبيت**")
         except: await event.edit("**• ❌ فشل**")
 
