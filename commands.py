@@ -63,14 +63,12 @@ def _get_cookies_file():
     cookies_path = os.path.join(TEMP_DIR, "yt_cookies.txt")
     try:
         with open(cookies_path, 'w', encoding='utf-8') as f:
-            # كتابة الكوكيز بتنسيق Netscape
             f.write("# Netscape HTTP Cookie File\n")
             f.write("# This is a generated file! Do not edit.\n\n")
             for cookie in YOUTUBE_COOKIES.split(';'):
                 cookie = cookie.strip()
                 if '=' in cookie:
                     name, value = cookie.split('=', 1)
-                    # تنسيق: domain flag path secure expiration name value
                     f.write(f".youtube.com\tTRUE\t/\tTRUE\t2147483647\t{name}\t{value}\n")
         logger.info("✅ تم إنشاء ملف الكوكيز لليوتيوب")
         return cookies_path
@@ -387,8 +385,8 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
     if not query.startswith("http"): query = f"ytsearch:{query}"
     
     timestamp = int(time.time())
+    prefix = 'audio_' if audio_only else 'video_'
     
-    # ✨ الحل: إضافة ملف الكوكيز
     cookies_file = _get_cookies_file()
     
     if audio_only:
@@ -397,8 +395,8 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'outtmpl': os.path.join(out_dir, f'audio_{timestamp}.%(ext)s'),
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
             'quiet': True, 'no_warnings': True, 'max_filesize': 50*1024*1024, 'extract_flat': False,
-            'cookiefile': cookies_file,  # ✨ إضافة الكوكيز
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},  # ✨ تحسين الاستخراج
+            'cookiefile': cookies_file,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
     else:
         ydl_opts = {
@@ -406,8 +404,8 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'outtmpl': os.path.join(out_dir, f'video_{timestamp}.%(ext)s'),
             'quiet': True, 'no_warnings': True, 'max_filesize': 100*1024*1024,
             'merge_output_format': 'mp4', 'extract_flat': False,
-            'cookiefile': cookies_file,  # ✨ إضافة الكوكيز
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},  # ✨ تحسين الاستخراج
+            'cookiefile': cookies_file,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         }
     
     try:
@@ -421,7 +419,6 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             
             info_dict = ydl.extract_info(query, download=True)
             
-            prefix = 'audio_' if audio_only else 'video_'
             files = [f for f in os.listdir(out_dir) if f.startswith(f'{prefix}{timestamp}')]
             if not files: raise ValueError("لم يتم العثور على الملف")
             
@@ -434,8 +431,12 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
                 'size': os.path.getsize(filepath), 'size_str': format_size(os.path.getsize(filepath)),
             }, filepath
     except Exception as e:
-        for f in os.listdir(out_dir):
-            if f.startswith(f'{prefix}{timestamp}'): safe_remove(os.path.join(out_dir, f))
+        try:
+            for f in os.listdir(out_dir):
+                if f.startswith(f'{prefix}{timestamp}'):
+                    safe_remove(os.path.join(out_dir, f))
+        except:
+            pass
         raise ValueError(f"فشل: {str(e)[:200]}")
 
 def convert_video_to_audio(video_path: str, out_dir: str):
@@ -1167,7 +1168,6 @@ async def setup_handlers(client, phone):
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ايدي$'))
     async def get_id(event):
-        target = None
         if event.is_reply:
             reply = await event.get_reply_message()
             user = await client.get_entity(reply.sender_id)
@@ -1182,7 +1182,6 @@ async def setup_handlers(client, phone):
                 except:
                     await event.edit("**• ❌ يوزر غير صحيح**")
             else:
-                chat = await event.get_input_chat()
                 await event.edit(f"**🆔 معرف الشات:** `{event.chat_id}`")
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.محظورين$'))
