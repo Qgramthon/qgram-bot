@@ -49,7 +49,7 @@ from shared import (
 
 # ============== استيراد المكتبات الاختيارية ==============
 try:
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageFilter
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
@@ -194,7 +194,6 @@ def apply_decoration(text, style_name):
     """تطبيق الزخرفة على النص الإنجليزي فقط"""
     if style_name not in DECORATION_STYLES:
         return text
-    
     style_map = DECORATION_STYLES[style_name]
     result = ''
     for char in text:
@@ -212,7 +211,6 @@ def translate_text(text: str) -> str:
             source, target = 'ar', 'en'
         else:
             source, target = 'en', 'ar'
-        
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={source}&tl={target}&dt=t&q={quote(text)}"
         resp = requests.get(url, timeout=15)
         if resp.status_code == 200:
@@ -310,120 +308,409 @@ async def run_animation(event, animation_name, duration=5):
     finally:
         if anim_key in active_animations: del active_animations[anim_key]
 
-# ============== دوال البحث عن الصور ==============
-def search_images_google_serpapi(query: str, limit: int = 10) -> list:
-    images = []
-    try:
-        api_key = os.environ.get("SERPAPI_KEY", "")
-        if api_key:
-            from serpapi import GoogleSearch
-            params = {"q": query, "tbm": "isch", "ijn": "0", "api_key": api_key}
-            search = GoogleSearch(params)
-            results = search.get_dict()
-            for img in results.get("images_results", []):
-                if img.get("original"):
-                    images.append(img["original"])
-                if len(images) >= limit: break
-            if images: return images
-    except: pass
+# ============== دوال تحسين الصور ==============
+def enhance_image(image_path: str, out_dir: str) -> str:
+    """تحسين جودة الصورة - زيادة الوضوح والتباين"""
+    if not PIL_AVAILABLE:
+        return image_path
     
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        search_url = f"https://www.google.com/search?q={quote(query)}&tbm=isch&hl=en&safe=off"
+        img = Image.open(image_path)
+        
+        # تحسين التباين
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.3)
+        
+        # تحسين الحدة
+        enhancer = ImageEnhance.Sharpness(img)
+        img = enhancer.enhance(1.5)
+        
+        # تحسين الألوان
+        enhancer = ImageEnhance.Color(img)
+        img = enhancer.enhance(1.2)
+        
+        # تحسين السطوع
+        enhancer = ImageEnhance.Brightness(img)
+        img = enhancer.enhance(1.1)
+        
+        # حفظ الصورة المحسنة
+        enhanced_path = os.path.join(out_dir, f"enhanced_{int(time.time())}_{random.randint(1000,9999)}.jpg")
+        img = img.convert('RGB')
+        img.save(enhanced_path, 'JPEG', quality=95, optimize=True)
+        
+        return enhanced_path
+    except Exception as e:
+        return image_path
+
+# ============== دوال البحث عن الصور المحسنة ==============
+def search_images_google_direct(query: str, limit: int = 10) -> list:
+    """بحث مباشر في جوجل مع فلترة أفضل"""
+    images = []
+    try:
+        api_key = os.environ.get("GOOGLE_API_KEY", "")
+        cx = os.environ.get("GOOGLE_CX", "")
+        
+        if api_key and cx:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                'key': api_key,
+                'cx': cx,
+                'q': query,
+                'searchType': 'image',
+                'num': min(limit, 10),
+                'safe': 'active',
+                'imgSize': 'large',
+                'imgType': 'photo',
+            }
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data.get('items', []):
+                    link = item.get('link', '')
+                    if link:
+                        images.append(link)
+                if images:
+                    return images[:limit]
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+        
+        # تحسين الاستعلام بإضافة فلاتر
+        enhanced_query = f"{query} photo portrait -icon -logo -avatar -cartoon -drawing -vector -clipart"
+        search_url = f"https://www.google.com/search?q={quote(enhanced_query)}&tbm=isch&hl=en&safe=active&tbs=isz:l,iar:s,itp:photo"
         resp = requests.get(search_url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
-            matches = re.findall(r'"ou":"(https?://[^"]+)"', resp.text)
-            for url in matches:
-                if url.startswith('http') and not any(s in url.lower() for s in ['google', 'gstatic', '/favicon']):
-                    images.append(url)
-                    if len(images) >= limit: break
-    except: pass
-    return images
+            # استخراج روابط الصور
+            matches = re.findall(r'\["([^"]*\.(?:jpg|jpeg|png|webp))",\s*(\d+),\s*(\d+)\]', resp.text)
+            for url, w, h in matches[:limit * 3]:
+                url = url.replace('\\u0026', '&')
+                if int(w) >= 400 and int(h) >= 400:
+                    if not any(x in url.lower() for x in [
+                        'icon', 'avatar', 'logo', 'favicon', 'thumb',
+                        'gstatic.com', 'google.com', '/favicon',
+                        'cartoon', 'drawing', 'vector', 'clipart',
+                        'animated', 'emoji', 'sticker', 'meme',
+                        'bathroom', 'toilet', 'plumbing', 'wc',
+                        'construction', 'blueprint', 'floor plan'
+                    ]):
+                        images.append(url)
+            
+            if not images:
+                matches = re.findall(r'"ou":"(https?://[^"]+)"', resp.text)
+                for url in matches:
+                    if url.startswith('http') and not any(x in url.lower() for x in [
+                        'google', 'gstatic', '/favicon', 'icon', 'avatar',
+                        'bathroom', 'toilet', 'plumbing'
+                    ]):
+                        images.append(url)
+        
+        return images[:limit]
+    except:
+        return []
 
-def search_images_bing_api(query: str, limit: int = 10) -> list:
+
+def search_images_bing_enhanced(query: str, limit: int = 10) -> list:
+    """بحث محسن في Bing"""
     images = []
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        url = f"https://www.bing.com/images/search?q={quote(query)}&first=1&count={limit}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        
+        enhanced_query = f"{query} photo portrait -icon -logo -avatar -cartoon"
+        url = f"https://www.bing.com/images/search?q={quote(enhanced_query)}&qft=+filterui:photo-photo+filterui:imagesize-large&form=IRFLTR&first=1&count={limit}"
         resp = requests.get(url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
-            matches = re.findall(r'murl&quot;:&quot;(https?://[^&]+)&quot;', resp.text)
+            matches = re.findall(r'"murl":"(https?://[^"]+)"', resp.text)
             for url in matches:
-                if 'bing.com' not in url.lower():
-                    images.append(url)
-                    if len(images) >= limit: break
-    except: pass
-    return images
+                if not any(x in url.lower() for x in [
+                    'bing.com', 'microsoft.com', 'icon', 'avatar',
+                    'logo', 'favicon', 'thumb/32', 'thumb/64',
+                    'bathroom', 'toilet', 'plumbing'
+                ]):
+                    if url not in images:
+                        images.append(url)
+        
+        return images[:limit]
+    except:
+        return []
 
-def search_images_ddg(query: str, limit: int = 10) -> list:
+
+def search_images_unsplash(query: str, limit: int = 10) -> list:
+    """بحث في Unsplash للصور عالية الجودة"""
     images = []
     try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.images(query, max_results=limit))
-            images = [img["image"] for img in results if img.get("image")]
-    except: pass
-    return images
+        access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+        if access_key:
+            url = "https://api.unsplash.com/search/photos"
+            headers = {'Authorization': f'Client-ID {access_key}'}
+            params = {'query': query, 'per_page': limit, 'orientation': 'squarish'}
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                for result in data.get('results', []):
+                    images.append(result['urls']['regular'])
+            if images:
+                return images[:limit]
+        
+        url = f"https://unsplash.com/s/photos/{quote(query)}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            matches = re.findall(r'srcSet="([^"]+)"', resp.text)
+            for srcset in matches:
+                urls = [u.strip().split(' ')[0] for u in srcset.split(',') if u.strip()]
+                if urls:
+                    best_url = urls[-1]
+                    if 'images.unsplash.com' in best_url:
+                        # تحويل لجودة أعلى
+                        best_url = re.sub(r'w=\d+', 'w=1080', best_url)
+                        best_url = re.sub(r'&q=\d+', '&q=85', best_url)
+                        images.append(best_url)
+        
+        return images[:limit]
+    except:
+        return []
 
-def search_all_images(query: str, limit: int = 5) -> list:
-    all_images = []
-    engines = [
-        ("DuckDuckGo", search_images_ddg),
-        ("Google", search_images_google_serpapi),
-        ("Bing", search_images_bing_api),
-    ]
-    for name, func in engines:
-        try:
-            results = func(query, limit=10)
-            if results: all_images.extend(results)
-        except: continue
+
+def search_images_pexels(query: str, limit: int = 10) -> list:
+    """بحث في Pexels للصور المجانية عالية الجودة"""
+    images = []
+    try:
+        api_key = os.environ.get("PEXELS_API_KEY", "")
+        if api_key:
+            url = "https://api.pexels.com/v1/search"
+            headers = {'Authorization': api_key}
+            params = {'query': query, 'per_page': limit, 'orientation': 'square', 'size': 'large'}
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                for photo in data.get('photos', []):
+                    images.append(photo['src']['large'])
+            if images:
+                return images[:limit]
+        
+        url = f"https://www.pexels.com/search/{quote(query)}/"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=15)
+        
+        if resp.status_code == 200:
+            matches = re.findall(r'data-large-src="([^"]+)"', resp.text)
+            for url in matches:
+                if 'pexels.com' in url:
+                    images.append(url)
+        
+        return images[:limit]
+    except:
+        return []
+
+
+def filter_best_images(images: list, query: str, limit: int = 5) -> list:
+    """فلترة ذكية للصور بناءً على المحتوى والجودة"""
     
+    blocked_keywords = [
+        'icon', 'avatar', 'logo', 'favicon', 'thumb', 'emoji',
+        'cartoon', 'drawing', 'sketch', 'vector', 'clipart', 'animated',
+        'meme', 'sticker', 'gif', 'funny', 'joke',
+        'bathroom', 'toilet', 'wc', 'plumbing', 'pipe', 'sink', 'shower',
+        'construction', 'building', 'house', 'real estate', 'blueprint',
+        'gstatic.com', 'google.com/favicon', 'placeholder',
+        'default', 'no-image', 'blank', 'transparent', 'error',
+    ]
+    
+    query_words = query.lower().split()
+    
+    # إزالة كلمات البحث الشائعة من الفلترة
+    common_words = ['في', 'من', 'على', 'مع', 'the', 'a', 'an', 'is', 'are', 'was', 'were']
+    important_words = [w for w in query_words if w not in common_words and len(w) > 2]
+    
+    filtered = []
+    for url in images:
+        url_lower = url.lower()
+        
+        # تخطي الروابط الممنوعة
+        if any(blocked in url_lower for blocked in blocked_keywords):
+            continue
+        
+        # تخطي الصور الصغيرة
+        if any(size in url_lower for size in ['/32/', '/64/', '/128/', '/150/', 'thumb', 'small', 'icon']):
+            continue
+        
+        # حساب درجة الملاءمة
+        score = 0
+        
+        # نقاط للكلمات المطابقة
+        for word in important_words:
+            if word in url_lower:
+                score += 3
+        
+        # نقاط للمواقع الموثوقة
+        trusted_domains = {
+            'unsplash.com': 10,
+            'pexels.com': 9,
+            'pixabay.com': 8,
+            'flickr.com': 7,
+            'wikipedia.org': 6,
+            'wikimedia.org': 6,
+            'pinimg.com': 5,
+            'cdninstagram.com': 4,
+        }
+        
+        for domain, points in trusted_domains.items():
+            if domain in url_lower:
+                score += points
+                break
+        
+        # نقاط إضافية للجودة العالية
+        quality_indicators = ['/original/', '/large/', '/hq/', 'quality=100', '1080', '1920']
+        for indicator in quality_indicators:
+            if indicator in url_lower:
+                score += 3
+        
+        # نقاط لامتدادات الصور الجيدة
+        if any(url_lower.endswith(ext) for ext in ['.jpg', '.jpeg', '.png']):
+            score += 2
+        
+        filtered.append((url, score))
+    
+    # ترتيب حسب الدرجة
+    filtered.sort(key=lambda x: x[1], reverse=True)
+    
+    # إزالة التكرار
     seen = set()
     unique = []
-    blocked = ['icon', 'favicon', 'avatar', 'logo', 'thumb/32', 'thumb/64', 'gstatic.com']
-    for url in all_images:
-        url = url.strip()
-        if not url.startswith('http'): continue
-        if any(b in url.lower() for b in blocked): continue
-        if url not in seen:
-            seen.add(url)
+    for url, score in filtered:
+        base_url = url.split('?')[0]
+        if base_url not in seen:
+            seen.add(base_url)
             unique.append(url)
-            if len(unique) >= limit: break
+            if len(unique) >= limit:
+                break
     
-    if not unique and ' ' in query:
-        parts = query.split()
-        if len(parts) >= 2:
-            return search_all_images(' '.join(parts[:2]), limit)
+    return unique
+
+
+def search_all_images_enhanced(query: str, limit: int = 5) -> list:
+    """البحث الشامل عن الصور بجودة عالية"""
     
-    return unique[:limit]
+    # تنظيف الاستعلام
+    query = query.strip()
+    query = re.sub(r'[^\w\s\u0600-\u06FF\-]', ' ', query)
+    query = re.sub(r'\s+', ' ', query).strip()
+    
+    # محاولة ترجمة الكلمات العربية للإنجليزية للحصول على نتائج أفضل
+    search_queries = [query]
+    
+    if re.search(r'[\u0600-\u06FF]', query):
+        try:
+            translated = translate_text(query)
+            if translated and translated != query:
+                search_queries.append(translated)
+        except:
+            pass
+    
+    all_images = []
+    
+    # البحث في المحركات المختلفة
+    engines = [
+        ("Google", search_images_google_direct),
+        ("Bing", search_images_bing_enhanced),
+        ("Unsplash", search_images_unsplash),
+        ("Pexels", search_images_pexels),
+    ]
+    
+    for search_query in search_queries:
+        for name, func in engines:
+            try:
+                results = func(search_query, limit=15)
+                if results:
+                    all_images.extend(results)
+            except:
+                continue
+    
+    # فلترة وترتيب النتائج
+    best_images = filter_best_images(all_images, query, limit)
+    
+    # لو مفيش نتائج كافية، نوسع البحث
+    if len(best_images) < 3 and ' ' in query:
+        words = query.split()
+        if len(words) > 2:
+            # نبحث بالكلمات الرئيسية فقط
+            important_words = [w for w in words if len(w) > 2]
+            short_query = ' '.join(important_words[:3])
+            if short_query != query:
+                extra_images = search_all_images_enhanced(short_query, limit)
+                for img in extra_images:
+                    if img not in best_images:
+                        best_images.append(img)
+                        if len(best_images) >= limit:
+                            break
+    
+    return best_images[:limit]
+
 
 def download_image_direct(url: str, out_dir: str) -> str:
+    """تحميل صورة من رابط مباشر"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.google.com/'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.google.com/',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+        }
         resp = requests.get(url, headers=headers, stream=True, timeout=30, allow_redirects=True)
         if resp.status_code != 200: return None
+        
         content_type = resp.headers.get('content-type', '').lower()
         ext = '.jpg'
         if 'png' in content_type: ext = '.png'
         elif 'webp' in content_type: ext = '.webp'
         elif 'gif' in content_type: ext = '.gif'
+        elif 'jpeg' in content_type: ext = '.jpg'
         
         filename = f"img_{int(time.time()*1000)}_{hashlib.md5(url.encode()).hexdigest()[:8]}{ext}"
         filepath = os.path.join(out_dir, filename)
+        
         size = 0
         with open(filepath, 'wb') as f:
             for chunk in resp.iter_content(8192):
                 if chunk:
                     f.write(chunk)
                     size += len(chunk)
-                    if size > 15 * 1024 * 1024:
+                    if size > 25 * 1024 * 1024:  # حد أقصى 25MB
                         safe_remove(filepath)
                         return None
+        
+        # التأكد من حجم الصورة (أكبر من 2KB)
         if size < 2048:
             safe_remove(filepath)
             return None
+        
+        # التأكد من أن الملف صورة حقيقية
+        if PIL_AVAILABLE:
+            try:
+                img = Image.open(filepath)
+                img.verify()
+                # إعادة فتح الصورة بعد verify
+                img = Image.open(filepath)
+                width, height = img.size
+                if width < 100 or height < 100:
+                    safe_remove(filepath)
+                    return None
+            except:
+                safe_remove(filepath)
+                return None
+        
         return filepath
-    except: return None
+    except:
+        return None
 
 # ============== دوال يوتيوب المحسنة ==============
 def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
@@ -437,7 +724,7 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             query = f"ytsearch5:{query}"
     
     timestamp = int(time.time() * 1000)
-    prefix = 'audio_' if audio_only else 'video_'  # ✅ تم إصلاح المشكلة هنا
+    prefix = 'audio_' if audio_only else 'video_'
     
     if audio_only:
         ydl_opts = {
@@ -1217,39 +1504,208 @@ async def setup_handlers(client, phone):
         except Exception as e: await event.edit(f"**• ❌ {str(e)[:150]}**", parse_mode='markdown')
         finally: safe_remove(stick_path); safe_remove(img_path)
 
+    # ============== أوامر الصور المحسنة ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.بن (.+)'))
     async def image_search(event):
+        """بحث متقدم عن الصور مع فلترة ذكية"""
         query = event.pattern_match.group(1).strip()
+        
+        # لو رابط مباشر
         if query.startswith('http'):
             await event.edit("**• 📷 جاري تحميل الصورة...**", parse_mode='markdown')
-            filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, query, TEMP_DIR)
-            if filepath: 
+            filepath = await asyncio.get_event_loop().run_in_executor(
+                _DOWNLOAD_EXECUTOR, download_image_direct, query, TEMP_DIR
+            )
+            if filepath:
                 await client.send_file(event.chat_id, filepath)
                 await event.delete()
                 safe_remove(filepath)
-            else: 
+            else:
                 await event.edit("**• ❌ فشل تحميل الصورة**", parse_mode='markdown')
             return
-        await event.edit(f"**• 🔍 جاري البحث عن '{query}'...**", parse_mode='markdown')
-        urls = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, search_all_images, query, 15)
-        if not urls: 
-            await event.edit(f"**• ❌ لم يتم العثور على صور**", parse_mode='markdown')
+        
+        # رسائل متحركة للبحث
+        search_steps = [
+            f"**• 🔍 جاري البحث عن '{query}'...**",
+            "**• 🌐 جاري البحث في Google...**",
+            "**• 📸 جاري البحث في Bing...**",
+            "**• 🖼️ جاري البحث في Unsplash...**",
+            "**• 🎨 جاري فلترة النتائج...**",
+        ]
+        
+        status_msg = await event.edit(search_steps[0], parse_mode='markdown')
+        
+        try:
+            for step in search_steps[1:]:
+                await asyncio.sleep(0.5)
+                try:
+                    await status_msg.edit(step, parse_mode='markdown')
+                except:
+                    pass
+            
+            # البحث عن الصور
+            urls = await asyncio.get_event_loop().run_in_executor(
+                _DOWNLOAD_EXECUTOR, search_all_images_enhanced, query, 15
+            )
+            
+            if not urls:
+                await status_msg.edit(
+                    f"**• ❌ لم يتم العثور على صور لـ '{query}'**\n\n"
+                    f"**💡 نصائح:**\n"
+                    f"• جرب كلمات بحث مختلفة\n"
+                    f"• استخدم كلمات إنجليزية للمشاهير الأجانب\n"
+                    f"• تجنب الرموز والعلامات الخاصة",
+                    parse_mode='markdown'
+                )
+                return
+            
+            await status_msg.edit(
+                f"**• ✅ تم العثور على {len(urls)} صورة**\n"
+                f"**• 📥 جاري تحميل أفضل الصور...**",
+                parse_mode='markdown'
+            )
+            
+            success = 0
+            for i, url in enumerate(urls[:5], 1):
+                try:
+                    filepath = await asyncio.get_event_loop().run_in_executor(
+                        _DOWNLOAD_EXECUTOR, download_image_direct, url, TEMP_DIR
+                    )
+                    if filepath:
+                        # كابشن للصورة
+                        caption = f"🖼️ **{query}**\n📷 صورة {i}/{min(5, len(urls))}"
+                        
+                        await client.send_file(
+                            event.chat_id, 
+                            filepath,
+                            caption=caption,
+                            parse_mode='markdown'
+                        )
+                        success += 1
+                        safe_remove(filepath)
+                        await asyncio.sleep(0.5)
+                except:
+                    continue
+            
+            if success > 0:
+                await status_msg.delete()
+            else:
+                await status_msg.edit(
+                    "**• ❌ فشل تحميل الصور**\n"
+                    "**💡 جرب بحثاً آخر أو تأكد من اتصالك**",
+                    parse_mode='markdown'
+                )
+                
+        except Exception as e:
+            await status_msg.edit(
+                f"**• ❌ خطأ في البحث:** {str(e)[:150]}",
+                parse_mode='markdown'
+            )
+
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.حسن$'))
+    async def enhance_image_cmd(event):
+        """تحسين جودة الصورة"""
+        if not event.is_reply:
+            await event.edit("**• ❌ يرجى الرد على صورة لتحسينها**", parse_mode='markdown')
             return
-        await event.edit(f"**• ✅ تم العثور على {len(urls)} صورة**", parse_mode='markdown')
-        success = 0
-        for url in urls[:5]:
-            try:
-                filepath = await asyncio.get_event_loop().run_in_executor(_DOWNLOAD_EXECUTOR, download_image_direct, url, TEMP_DIR)
-                if filepath: 
-                    await client.send_file(event.chat_id, filepath)
-                    success += 1
-                    safe_remove(filepath)
-                await asyncio.sleep(0.3)
-            except: continue
-        if success > 0: 
+        
+        if not PIL_AVAILABLE:
+            await event.edit("**• ❌ مكتبة PIL غير مثبتة**", parse_mode='markdown')
+            return
+        
+        reply = await event.get_reply_message()
+        if not reply.photo:
+            await event.edit("**• ❌ يرجى الرد على صورة فقط**", parse_mode='markdown')
+            return
+        
+        await event.edit("**• 🎨 جاري تحسين جودة الصورة...**", parse_mode='markdown')
+        img_path = enhanced_path = None
+        
+        try:
+            # تحميل الصورة الأصلية
+            img_path = os.path.join(TEMP_DIR, f"original_{phone}_{int(time.time())}.jpg")
+            await client.download_media(reply, img_path)
+            
+            # تحسين الصورة
+            enhanced_path = await asyncio.get_event_loop().run_in_executor(
+                _DOWNLOAD_EXECUTOR, enhance_image, img_path, TEMP_DIR
+            )
+            
+            if enhanced_path and enhanced_path != img_path:
+                # إرسال الصورة المحسنة
+                caption = "✨ **صورة محسنة الجودة**\n🎨 تم تحسين: التباين - الحدة - الألوان - السطوع"
+                await client.send_file(
+                    event.chat_id, 
+                    enhanced_path,
+                    caption=caption,
+                    parse_mode='markdown'
+                )
+                await event.delete()
+            else:
+                await event.edit("**• ❌ فشل تحسين الصورة**", parse_mode='markdown')
+                
+        except Exception as e:
+            await event.edit(f"**• ❌ خطأ:** {str(e)[:150]}", parse_mode='markdown')
+        finally:
+            safe_remove(img_path)
+            if enhanced_path and enhanced_path != img_path:
+                safe_remove(enhanced_path)
+
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.وضح$'))
+    async def enhance_clarity_cmd(event):
+        """زيادة وضوح الصورة"""
+        if not event.is_reply:
+            await event.edit("**• ❌ يرجى الرد على صورة**", parse_mode='markdown')
+            return
+        
+        if not PIL_AVAILABLE:
+            await event.edit("**• ❌ مكتبة PIL غير مثبتة**", parse_mode='markdown')
+            return
+        
+        reply = await event.get_reply_message()
+        if not reply.photo:
+            await event.edit("**• ❌ يرجى الرد على صورة فقط**", parse_mode='markdown')
+            return
+        
+        await event.edit("**• 🔍 جاري زيادة الوضوح...**", parse_mode='markdown')
+        img_path = enhanced_path = None
+        
+        try:
+            img_path = os.path.join(TEMP_DIR, f"blurry_{phone}_{int(time.time())}.jpg")
+            await client.download_media(reply, img_path)
+            
+            # فتح الصورة وتحسينها
+            img = Image.open(img_path)
+            
+            # تطبيق فلتر sharpening قوي
+            enhanced = img.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+            
+            # تحسين إضافي
+            enhancer = ImageEnhance.Sharpness(enhanced)
+            enhanced = enhancer.enhance(2.0)
+            
+            enhancer = ImageEnhance.Contrast(enhanced)
+            enhanced = enhancer.enhance(1.2)
+            
+            # حفظ الصورة
+            enhanced_path = os.path.join(TEMP_DIR, f"clear_{phone}_{int(time.time())}.jpg")
+            enhanced = enhanced.convert('RGB')
+            enhanced.save(enhanced_path, 'JPEG', quality=95)
+            
+            caption = "🔍 **صورة محسنة الوضوح**\n✨ تم تطبيق فلتر زيادة الحدة"
+            await client.send_file(
+                event.chat_id, 
+                enhanced_path,
+                caption=caption,
+                parse_mode='markdown'
+            )
             await event.delete()
-        else: 
-            await event.edit("**• ❌ فشل تحميل الصور**", parse_mode='markdown')
+            
+        except Exception as e:
+            await event.edit(f"**• ❌ خطأ:** {str(e)[:150]}", parse_mode='markdown')
+        finally:
+            safe_remove(img_path)
+            safe_remove(enhanced_path)
 
     # ============== أمر .ترجم ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ترجم(?: (.+))?$'))
@@ -1980,7 +2436,7 @@ async def setup_handlers(client, phone):
 **🎪 الأنيمشن:** `.ضحك` `.قلب` `.غيمة` `.ورد` `.كوكب` `.شتاء` `.قمر` `.وقف`
 **📥 التحميل:** `.يوت` `.فيد` `.صوت`
 **🔧 التحويل:** `.نسخ` `.استيك` `.بيك` `.ترجم`
-**🖼️ الصور:** `.بن` `.صورة`
+**🖼️ الصور:** `.بن` `.صورة` `.حسن` `.وضح`
 **👥 الإدارة:** `.تاك` `.غ تاك` `.حظر` `.غ حظر` `.كتم` `.قيد` `.طرد`
 **🔓 فك:** `.فك محظور` `.فك محظورين` `.فك كتم` `.فك مكتومين` `.فك تقيد` `.فك مقيدين`
 **📝 المعرفات:** `.ايدي` `.انشاء` `.عدد` `.رتبة`
