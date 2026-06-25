@@ -370,7 +370,7 @@ async def run_animation(event, animation_name, duration=5):
 def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
     """
     تحميل وسائط من يوتيوب
-    يستخدم ملف كوكيز مؤقت يتم إنشاؤه من _COOKIES_TEXT
+    يستخدم ملف كوكيز مؤقت + User-Agent حقيقي
     """
     if not YTDLP_AVAILABLE:
         raise ValueError("مكتبة yt-dlp غير مثبتة")
@@ -382,6 +382,9 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
     prefix = 'audio_' if audio_only else 'video_'
 
     cookie_path = _get_cookie_file_path()
+
+    # User-Agent حقيقي من متصفح Chrome حديث
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     if audio_only:
         ydl_opts = {
@@ -402,6 +405,7 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'retries': 5,
             'fragment_retries': 5,
             'cookiefile': cookie_path,
+            'http_headers': {'User-Agent': user_agent},
         }
     else:
         ydl_opts = {
@@ -420,15 +424,14 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             'concurrent_fragment_downloads': 8,
             'buffersize': 16384,
             'cookiefile': cookie_path,
+            'http_headers': {'User-Agent': user_agent},
         }
 
     downloaded_file = None
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # الخطوة الأولى: استخراج المعلومات بدون تحميل
             info = ydl.extract_info(query, download=False)
 
-            # لو في entries، ناخد أول وحدة
             if info and 'entries' in info and info['entries']:
                 entries = [e for e in info['entries'] if e is not None]
                 if not entries:
@@ -439,7 +442,6 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             else:
                 raise ValueError("لم يتم العثور على نتائج")
 
-            # نجيب الرابط الفعلي للفيديو
             video_url = None
             if video.get('webpage_url'):
                 video_url = video['webpage_url']
@@ -456,7 +458,6 @@ def download_youtube_media(query: str, out_dir: str, audio_only: bool = False):
             title = video.get('title', 'بدون عنوان')
             duration = video.get('duration', 0)
 
-            # الخطوة التانية: تحميل الفيديو من الرابط المباشر
             ydl.download([video_url])
 
             files = []
