@@ -17,7 +17,7 @@ DEV_USER_ID = 6443238809
 SOURCE_CHANNEL_USERNAME = "Q_g_r_a_m"
 
 # ⚠️ توكن مؤقت للتشغيل الفوري (استبدله لاحقاً بالمشفر)
-BOT_TOKEN = '8887748662:AAE_uXP-euxGZM_EtxEQ9njXvXkvjmhXqL8'
+BOT_TOKEN = '8813537244:AAHS6DPp3C9tmu3fB0kyFldOfhtaXBsSy7g'
 
 BOT_API_ID = 2040
 BOT_API_HASH = 'b18441a1ff607e10a989891a5462e627'
