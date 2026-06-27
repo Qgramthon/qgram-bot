@@ -1771,7 +1771,7 @@ async def setup_handlers(client, phone):
     # ============== أوامر الأويسي ==============
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.اوامر$'))
     async def show_commands(event):
-        cmds = """**• أوامر تيليثون ڪيوجࢪام 🜲**
+        cmds = """**• أوامر تيليثون نينجاغࢪام 🜲**
 
 **🎨 التنسيق:**
 `.عريض` → تفعيل الخط العريض
@@ -1875,7 +1875,7 @@ async def setup_handlers(client, phone):
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.سورس$'))
     async def show_source(event):
-        await event.edit(BOLD.format("Ԛgɾᥲꪔ ƚꫀᥣꫀƚһ᥆ꪀ ᥉᥆ᥙɾᥴꫀ\nᥙρძᥲƚꫀ᥉ @Q_g_r_a_m\nᑲ᥆ƚ @Qthon_bot\nძꫀ᥎ @J0E_3"), parse_mode='markdown')
+        await event.edit(BOLD.format("ꪀɪꪀȷᥲgɾᥲꪔ ƚꫀᥣꫀƚһ᥆ꪀ ᥉᥆ᥙɾᥴꫀ\nᥙρძᥲƚꫀ᥉ @nj_rm\nᑲ᥆ƚ @nj_rm_bot\nძꫀ᥎ @J0E_3"), parse_mode='markdown')
 
     @client.on(events.NewMessage(outgoing=True, pattern=r'^\.المساحة$'))
     async def space_check(event):
