@@ -62,14 +62,14 @@ async def bot_start(event):
     if is_dev(user_id):
         await bot.send_message(
             event.chat_id,
-            "**🜲 لوحة تحكم Qthon**\n\nاختر خياراً من القائمة.",
+            "**🜲 لوحة تحكم Ninjagram**\n\nاختر خياراً من القائمة.",
             buttons=dev_panel_markup(),
             parse_mode='md'
         )
         return
 
     buttons = [
-        [Button.url("بدء التنصيب", "https://t.me/Qthon_bot?profile")]
+        [Button.url("بدء التنصيب", "https://t.me/nj_rm_bot?profile")]
     ]
     caption = (
         "**• لبدء تنصيب تيليثون نينجاغࢪام 🜲**\n"
