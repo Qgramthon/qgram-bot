@@ -1,17 +1,19 @@
-# Ultimate NinjaGram Pro Max Ultra Bot
-import asyncio, uuid, os, re, random, string, aiohttp, json, time, sys
+# Ultimate NinjaGram Pro Max Ultra - Complete Code
+import asyncio, uuid, os, re, random, string, aiohttp, json, time, sys, io, mimetypes
 from datetime import datetime
 from urllib.parse import quote, urlencode
 from telethon import TelegramClient, events, Button, functions, types
 from telethon.errors import *
 from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
-from telethon.tl.functions.messages import ImportChatInviteRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest, CheckChatInviteRequest
+from telethon.tl.types import InputPhoneContact
 from collections import Counter, defaultdict, deque
 import hashlib, base64, struct
 from typing import Optional, Dict, List, Set, Tuple, Any
 from dataclasses import dataclass, field
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from bs4 import BeautifulSoup  # للتجميع من الويب
 
 # ============================================
 # استيراد الإعدادات من ملف الشيرد
@@ -481,10 +483,10 @@ class UltimateUsernameChecker:
         return False
 
 # ============================================
-# نظام تحميل فيديو متعدد المصادر
+# نظام تحميل فيديو متعدد المصادر مع إرسال الفيديو
 # ============================================
 class UltimateVideoDownloader:
-    """نظام تحميل فيديوهات من 10+ منصات"""
+    """نظام تحميل فيديوهات من 10+ منصات مع إرسال الملف"""
     
     APIS = {
         "tiktok": [
@@ -498,7 +500,7 @@ class UltimateVideoDownloader:
         ],
         "youtube": [
             "https://api.yt-dl.org/api/youtube?url={url}",
-            "https://yt-api.p.rapidapi.com/dl?id={url}"
+            "https://loader.to/ajax/download.php?format=mp4&url={url}"
         ],
         "facebook": [
             "https://api.fbdown.net/api/download?url={url}",
@@ -519,8 +521,8 @@ class UltimateVideoDownloader:
     }
     
     @classmethod
-    async def download(cls, url: str, platform: str) -> Dict:
-        """تحميل فيديو مع تجربة APIs متعددة"""
+    async def download_and_get_url(cls, url: str, platform: str) -> Dict:
+        """تحميل فيديو مع تجربة APIs متعددة وإرجاع الرابط"""
         apis = cls.APIS.get(platform, [])
         
         async with aiohttp.ClientSession() as session:
@@ -560,18 +562,22 @@ class UltimateVideoDownloader:
                 return {"success": True, "video_url": video_url, "platform": "انستجرام"}
         
         elif platform == "youtube":
-            formats = data.get("formats", [])
-            if formats:
-                best = max(formats, key=lambda x: x.get("quality", 0) if isinstance(x.get("quality"), int) else 0)
-                return {"success": True, "video_url": best.get("url"), "platform": "يوتيوب"}
+            video_url = data.get("download_url") or data.get("url")
+            if not video_url and "formats" in data:
+                formats = data["formats"]
+                if formats:
+                    best = max(formats, key=lambda x: x.get("quality", 0) if isinstance(x.get("quality"), int) else 0)
+                    video_url = best.get("url")
+            if video_url:
+                return {"success": True, "video_url": video_url, "platform": "يوتيوب", "title": data.get("title", "")}
         
         return {"success": False}
 
 # ============================================
-# نظام معلومات الحساب المتقدم
+# نظام معلومات الحساب المتقدم (مع الإيميلات والأرقام)
 # ============================================
 class AccountInfoFetcher:
-    """جالب معلومات حسابات متقدم"""
+    """جالب معلومات حسابات متقدم مع كشف الإيميلات والأرقام"""
     
     @classmethod
     async def get_telegram_info(cls, username: str) -> Dict:
@@ -597,6 +603,16 @@ class AccountInfoFetcher:
                     info["is_verified"] = "verified" in text.lower()
                     info["is_premium"] = "premium" in text.lower()
                     
+                    # محاولة استخراج أي إيميلات ظاهرة في البايو
+                    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', info.get("bio", ""))
+                    if emails:
+                        info["exposed_emails"] = emails
+                    
+                    # محاولة استخراج أي أرقام هواتف ظاهرة
+                    phones = re.findall(r'\+?[\d]{8,15}', info.get("bio", ""))
+                    if phones:
+                        info["exposed_phones"] = phones
+                    
                     subs_match = re.search(r'(\d+[,\s]*\d*)\s*(subscribers|مشترك)', text, re.IGNORECASE)
                     if subs_match:
                         info["subscribers"] = subs_match.group(1)
@@ -619,7 +635,7 @@ class AccountInfoFetcher:
                     if resp.status == 200:
                         data = await resp.json()
                         user = data.get("graphql", {}).get("user", {})
-                        return {
+                        info = {
                             "exists": True,
                             "username": user.get("username"),
                             "full_name": user.get("full_name"),
@@ -631,9 +647,79 @@ class AccountInfoFetcher:
                             "profile_image": user.get("profile_pic_url_hd"),
                             "bio": user.get("biography", "")
                         }
+                        # استخراج الإيميلات والأرقام من البايو
+                        if info["bio"]:
+                            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', info["bio"])
+                            if emails:
+                                info["exposed_emails"] = emails
+                            phones = re.findall(r'\+?[\d]{8,15}', info["bio"])
+                            if phones:
+                                info["exposed_phones"] = phones
+                        return info
         except:
             pass
         return {"exists": False}
+    
+    @classmethod
+    async def get_account_by_id(cls, user_id: int) -> Dict:
+        """محاولة جلب معلومات عن طريق الآيدي الرقمي"""
+        try:
+            # محاولة جلب معلومات من تيليجرام مباشرة
+            entity = await bot.get_entity(user_id)
+            info = {
+                "id": user_id,
+                "exists": True,
+                "username": getattr(entity, 'username', None),
+                "first_name": getattr(entity, 'first_name', None),
+                "last_name": getattr(entity, 'last_name', None),
+                "phone": getattr(entity, 'phone', None),
+                "is_verified": getattr(entity, 'verified', False),
+                "is_premium": getattr(entity, 'premium', False),
+                "is_bot": getattr(entity, 'bot', False)
+            }
+            return info
+        except:
+            return {"exists": False, "error": "تعذر العثور على المستخدم"}
+
+# ============================================
+# نظام تجميع الجروبات والقنوات
+# ============================================
+class GroupScraper:
+    """نظام متقدم لتجميع الجروبات والقنوات"""
+    
+    @classmethod
+    async def scrape_public_groups(cls, keyword: str, limit: int = 20) -> List[Dict]:
+        """تجميع جروبات عامة حسب الكلمة المفتاحية"""
+        results = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                # البحث في مصادر متعددة
+                search_urls = [
+                    f"https://t.me/s/{keyword}",
+                    f"https://tgstat.com/search?q={keyword}",
+                ]
+                
+                for url in search_urls:
+                    try:
+                        headers = {'User-Agent': random.choice(UltimateUsernameChecker.USER_AGENTS)}
+                        async with session.get(url, headers=headers, timeout=10) as resp:
+                            if resp.status == 200:
+                                text = await resp.text()
+                                # استخراج روابط القنوات والجروبات
+                                links = re.findall(r'https?://t\.me/([a-zA-Z0-9_]+)', text)
+                                for link in links[:limit]:
+                                    if link not in [r['username'] for r in results]:
+                                        results.append({
+                                            'username': link,
+                                            'url': f"https://t.me/{link}",
+                                            'type': 'channel' if len(link) > 10 else 'group'
+                                        })
+                    except:
+                        continue
+        except Exception as e:
+            logger.error(f"Scrape error: {e}")
+        
+        return results
 
 # ============================================
 # نظام الحماية ومكافحة السبام
@@ -684,8 +770,9 @@ class UIManager:
              Button.inline(f"🔗 فتح بالآيدي", b"open_start")],
             [Button.inline(f"🔄 تحويل يوزر/آيدي", b"resolve_start"),
              Button.inline(f"✅ فحص يوزر متعدد", b"check_menu")],
-            [Button.inline(f"📊 إحصائيات", b"stats_menu"),
-             Button.inline(f"⚙️ إعدادات", b"settings_menu")],
+            [Button.inline(f"🔎 تجميع جروبات", b"scrape_menu"),
+             Button.inline(f"📊 إحصائيات", b"stats_menu")],
+            [Button.inline(f"⭐ خدمات مميزة", b"premium_menu")],
         ]
     
     @classmethod
@@ -718,8 +805,10 @@ class UIManager:
     @classmethod
     def info_menu(cls):
         return [
-            [Button.inline(f"📱 تيليجرام", b"info_tg"),
-             Button.inline(f"📷 انستجرام", b"info_ig")],
+            [Button.inline(f"📱 تيليجرام (يوزر)", b"info_tg"),
+             Button.inline(f"📱 تيليجرام (آيدي)", b"info_tg_id")],
+            [Button.inline(f"📷 انستجرام", b"info_ig"),
+             Button.inline(f"🌐 متعدد", b"info_multi")],
             [Button.inline(f"🔙 رجوع", b"back_main")],
         ]
     
@@ -730,6 +819,25 @@ class UIManager:
              Button.inline(f"📷 انستجرام فقط", b"check_ig")],
             [Button.inline(f"🎵 تيكتوك فقط", b"check_tk"),
              Button.inline(f"🌐 كل المنصات", b"check_all_platforms")],
+            [Button.inline(f"🔙 رجوع", b"back_main")],
+        ]
+    
+    @classmethod
+    def scrape_menu(cls):
+        return [
+            [Button.inline(f"🔍 بحث عن جروبات", b"scrape_groups"),
+             Button.inline(f"📢 بحث عن قنوات", b"scrape_channels")],
+            [Button.inline(f"🔥 الأكثر شيوعاً", b"scrape_trending")],
+            [Button.inline(f"🔙 رجوع", b"back_main")],
+        ]
+    
+    @classmethod
+    def premium_menu(cls):
+        return [
+            [Button.inline(f"🛡️ فحص خصوصية الحساب", b"privacy_check"),
+             Button.inline(f"📊 تحليل متقدم لحساب", b"account_analysis")],
+            [Button.inline(f"🔗 فتح حساب بالمعرف", b"open_by_id"),
+             Button.inline(f"💎 يوزرات مميزة جاهزة", b"premium_usernames")],
             [Button.inline(f"🔙 رجوع", b"back_main")],
         ]
 
@@ -755,8 +863,10 @@ async def bot_start(event):
         "⚡ **المميزات:**\n"
         "• صيد ذكي بـ 15 استراتيجية\n"
         "• فحص 6 منصات مختلفة\n"
-        "• تحميل من 8+ منصات\n"
-        "• معلومات حسابات مفصلة\n"
+        "• تحميل من 8+ منصات مع إرسال الفيديو\n"
+        "• معلومات حسابات مفصلة (إيميلات، أرقام)\n"
+        "• تجميع جروبات وقنوات\n"
+        "• فتح الحسابات بالآيدي\n"
         "• حماية من السبام\n"
         "• دعم كامل للغة العربية\n\n"
         "📢 **Channel:** @Q_g_r_a_m\n"
@@ -929,7 +1039,7 @@ async def hunt_all_platforms(event):
     await event.edit(text, buttons=[[Button.inline("🔙 رجوع", b"hunt_menu")]], parse_mode='md')
 
 # ============================================
-# نظام تحميل الفيديو المتقدم
+# نظام تحميل الفيديو المتقدم مع إرسال الملف
 # ============================================
 @bot.on(events.CallbackQuery(data=re.compile(b"dl_(.+)")))
 async def video_download_handler(event):
@@ -965,21 +1075,48 @@ async def handle_video_download(event):
         await event.respond("❌ **رابط غير صالح**", buttons=[[Button.inline("🔙 رجوع", b"video_menu")]], parse_mode='md')
         return
     
-    loading_msg = await event.respond("⏳ **جاري التحميل...**\n🔍 البحث عن أفضل جودة", parse_mode='md')
+    loading_msg = await event.respond("⏳ **جاري التحميل...**\n🔍 البحث عن أفضل جودة\n📥 جاري تجهيز الملف للإرسال", parse_mode='md')
     
-    result = await UltimateVideoDownloader.download(url, platform)
+    result = await UltimateVideoDownloader.download_and_get_url(url, platform)
     
     if result.get("success"):
+        video_url = result['video_url']
+        video_title = result.get('title', '')
+        
+        try:
+            # محاولة تحميل وإرسال الفيديو مباشرة
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, timeout=60) as resp:
+                    if resp.status == 200 and int(resp.headers.get('Content-Length', 0)) < 50 * 1024 * 1024:  # أقل من 50 ميجا
+                        video_data = await resp.read()
+                        video_io = io.BytesIO(video_data)
+                        video_io.name = f"video_{uuid.uuid4().hex[:8]}.mp4"
+                        
+                        await loading_msg.delete()
+                        await bot.send_file(
+                            event.chat_id,
+                            video_io,
+                            caption=f"✅ **تم التحميل بنجاح!**\n📱 المنصة: {result.get('platform', platform)}\n🎬 {video_title}",
+                            supports_streaming=True,
+                            buttons=[[Button.inline("🔙 رجوع", b"video_menu")]]
+                        )
+                        return
+        except Exception as e:
+            logger.error(f"Send video error: {e}")
+        
+        # إذا فشل الإرسال المباشر، إرسال الرابط
         await loading_msg.edit(
-            f"✅ **تم التحميل بنجاح!**\n\n"
-            f"📹 [اضغط هنا للمشاهدة/التحميل]({result['video_url']})\n"
-            f"📱 المنصة: {result.get('platform', platform)}",
+            f"✅ **تم استخراج رابط التحميل!**\n\n"
+            f"📹 [اضغط هنا للمشاهدة/التحميل]({video_url})\n"
+            f"📱 المنصة: {result.get('platform', platform)}\n"
+            f"🎬 {video_title}\n\n"
+            f"⚠️ *تعذر إرسال الملف مباشرة بسبب الحجم، استخدم الرابط أعلاه*",
             buttons=[[Button.inline("🔙 رجوع", b"video_menu")]],
             parse_mode='md'
         )
     else:
         await loading_msg.edit(
-            f"❌ **فشل التحميل**\n{result.get('error', 'خطأ غير معروف')}",
+            f"❌ **فشل التحميل**\n{result.get('error', 'خطأ غير معروف')}\n\n💡 جرب رابطاً آخر",
             buttons=[[Button.inline("🔄 حاول مرة أخرى", f"dl_{platform}".encode()),
                       Button.inline("🔙 رجوع", b"video_menu")]],
             parse_mode='md'
@@ -996,6 +1133,18 @@ async def info_telegram_start(event):
         "🔍 **معلومات حساب تيليجرام**\n\n"
         "📤 أرسل يوزر الحساب:\n"
         "مثال: @username",
+        buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
+        parse_mode='md'
+    )
+
+@bot.on(events.CallbackQuery(data=b"info_tg_id"))
+async def info_telegram_id_start(event):
+    user_id = event.sender_id
+    user_states[user_id] = "waiting_info_tg_id"
+    await event.edit(
+        "🔍 **معلومات حساب تيليجرام بالآيدي**\n\n"
+        "📤 أرسل الآيدي الرقمي:\n"
+        "مثال: 6443238809",
         buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
         parse_mode='md'
     )
@@ -1024,6 +1173,17 @@ async def handle_telegram_info(event):
         if info.get("subscribers"):
             text += f"👥 المشتركين: {info['subscribers']}\n"
         
+        # عرض المعلومات الحساسة إن وجدت
+        if info.get("exposed_emails"):
+            text += f"\n📧 **إيميلات مكشوفة:**\n"
+            for email in info["exposed_emails"]:
+                text += f"• `{email}`\n"
+        
+        if info.get("exposed_phones"):
+            text += f"\n📞 **أرقام مكشوفة:**\n"
+            for phone in info["exposed_phones"]:
+                text += f"• `{phone}`\n"
+        
         text += f"\n🔗 [فتح الحساب](https://t.me/{username})\n"
         text += f"📱 [فتح في التطبيق](tg://resolve?domain={username})"
         
@@ -1042,6 +1202,123 @@ async def handle_telegram_info(event):
             buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
             parse_mode='md'
         )
+
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and user_states[e.sender_id] == "waiting_info_tg_id"))
+async def handle_telegram_id_info(event):
+    user_id = event.sender_id
+    user_states.pop(user_id, None)
+    try:
+        target_id = int(event.text.strip())
+    except:
+        await event.respond("❌ **آيدي غير صالح**", buttons=[[Button.inline("🔙 رجوع", b"info_menu")]], parse_mode='md')
+        return
+    
+    loading_msg = await event.respond("🔍 **جاري جلب المعلومات بالآيدي...**", parse_mode='md')
+    
+    info = await AccountInfoFetcher.get_account_by_id(target_id)
+    
+    if info.get("exists"):
+        text = f"📱 **معلومات الحساب #️⃣`{target_id}`**\n\n"
+        text += f"👤 الاسم: {info.get('first_name', '')} {info.get('last_name', '')}\n"
+        text += f"🔖 اليوزر: @{info.get('username') if info.get('username') else 'لا يوجد'}\n"
+        text += f"📞 الهاتف: `{info.get('phone') if info.get('phone') else 'مخفي'}`\n"
+        text += f"✅ موثق: {'نعم' if info.get('is_verified') else 'لا'}\n"
+        text += f"⭐ بريميوم: {'نعم' if info.get('is_premium') else 'لا'}\n"
+        text += f"🤖 بوت: {'نعم' if info.get('is_bot') else 'لا'}\n"
+        
+        if info.get('username'):
+            text += f"\n🔗 [فتح الحساب](https://t.me/{info['username']})"
+        
+        await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"info_menu")]], parse_mode='md')
+    else:
+        await loading_msg.edit("❌ **تعذر العثور على المستخدم**", buttons=[[Button.inline("🔙 رجوع", b"info_menu")]], parse_mode='md')
+
+# ============================================
+# نظام فتح الحسابات وتحويل اليوزرات
+# ============================================
+@bot.on(events.CallbackQuery(data=b"open_start"))
+async def open_by_id_start(event):
+    user_id = event.sender_id
+    user_states[user_id] = "waiting_open_id"
+    await event.edit(
+        "🔗 **فتح حساب بالآيدي**\n\n"
+        "📤 أرسل الآيدي الرقمي:\n"
+        "مثال: 6443238809\n\n"
+        "🔄 أو أرسل يوزر لتحويله لآيدي: @username",
+        buttons=[[Button.inline("🔙 رجوع", b"back_main")]],
+        parse_mode='md'
+    )
+
+@bot.on(events.CallbackQuery(data=b"resolve_start"))
+async def resolve_start(event):
+    user_id = event.sender_id
+    user_states[user_id] = "waiting_resolve"
+    await event.edit(
+        "🔄 **تحويل يوزر إلى آيدي والعكس**\n\n"
+        "📤 أرسل اليوزر أو الآيدي:\n"
+        "مثال: @username أو 6443238809",
+        buttons=[[Button.inline("🔙 رجوع", b"back_main")]],
+        parse_mode='md'
+    )
+
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and user_states[e.sender_id] == "waiting_open_id"))
+async def handle_open_by_id(event):
+    user_id = event.sender_id
+    user_states.pop(user_id, None)
+    input_text = event.text.strip()
+    
+    try:
+        if input_text.startswith('@'):
+            username = input_text[1:]
+            entity = await bot.get_entity(username)
+        else:
+            entity = await bot.get_entity(int(input_text))
+        
+        if entity:
+            username = getattr(entity, 'username', None)
+            user_id_num = entity.id
+            
+            text = f"✅ **تم العثور على الحساب**\n\n"
+            text += f"🆔 الآيدي: `{user_id_num}`\n"
+            text += f"🔖 اليوزر: @{username if username else 'لا يوجد'}\n"
+            text += f"👤 الاسم: {getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}\n"
+            
+            if username:
+                text += f"\n🔗 [فتح الحساب](https://t.me/{username})\n"
+                text += f"📱 [فتح في التطبيق](tg://resolve?domain={username})"
+            else:
+                text += f"\n📱 [فتح في التطبيق](tg://openmessage?user_id={user_id_num})"
+            
+            await event.respond(text, buttons=[[Button.inline("🔙 رجوع", b"back_main")]], parse_mode='md')
+    except Exception as e:
+        await event.respond(f"❌ **خطأ:** {str(e)[:100]}", buttons=[[Button.inline("🔙 رجوع", b"back_main")]], parse_mode='md')
+
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and user_states[e.sender_id] == "waiting_resolve"))
+async def handle_resolve(event):
+    user_id = event.sender_id
+    user_states.pop(user_id, None)
+    input_text = event.text.strip()
+    
+    try:
+        if input_text.startswith('@'):
+            username = input_text[1:]
+            entity = await bot.get_entity(username)
+            text = f"🔄 **تحويل يوزر → آيدي**\n\n"
+            text += f"🔖 @{username}\n"
+            text += f"🆔 `{entity.id}`\n"
+            text += f"👤 {getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}"
+        else:
+            user_id_num = int(input_text)
+            entity = await bot.get_entity(user_id_num)
+            username = getattr(entity, 'username', None)
+            text = f"🔄 **تحويل آيدي → يوزر**\n\n"
+            text += f"🆔 `{user_id_num}`\n"
+            text += f"🔖 @{username if username else 'لا يوجد يوزر'}\n"
+            text += f"👤 {getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}"
+        
+        await event.respond(text, buttons=[[Button.inline("🔙 رجوع", b"back_main")]], parse_mode='md')
+    except Exception as e:
+        await event.respond(f"❌ **خطأ:** {str(e)[:100]}", buttons=[[Button.inline("🔙 رجوع", b"back_main")]], parse_mode='md')
 
 # ============================================
 # نظام فحص اليوزرات المتقدم
@@ -1103,6 +1380,121 @@ async def handle_check_all(event):
     await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"check_menu")]], parse_mode='md')
 
 # ============================================
+# نظام تجميع الجروبات والقنوات
+# ============================================
+@bot.on(events.CallbackQuery(data=b"scrape_groups"))
+async def scrape_groups_start(event):
+    user_id = event.sender_id
+    user_states[user_id] = "waiting_scrape_groups"
+    await event.edit(
+        "🔍 **تجميع الجروبات العامة**\n\n"
+        "📤 أرسل الكلمة المفتاحية للبحث:\n"
+        "مثال: برمجة، تسويق، العاب",
+        buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]],
+        parse_mode='md'
+    )
+
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and user_states[e.sender_id] == "waiting_scrape_groups"))
+async def handle_scrape_groups(event):
+    user_id = event.sender_id
+    user_states.pop(user_id, None)
+    keyword = event.text.strip()
+    
+    loading_msg = await event.respond(f"🔍 **جاري البحث عن جروبات: {keyword}**\n⏳ يرجى الانتظار...", parse_mode='md')
+    
+    groups = await GroupScraper.scrape_public_groups(keyword, 20)
+    
+    if groups:
+        text = f"📊 **نتائج البحث عن: {keyword}**\n\n"
+        text += f"✅ تم العثور على {len(groups)} جروب/قناة:\n\n"
+        
+        for i, group in enumerate(groups[:15], 1):
+            text += f"{i}. [{group['username']}]({group['url']}) | {group['type']}\n"
+        
+        await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]], parse_mode='md')
+    else:
+        await loading_msg.edit(
+            f"❌ **لم يتم العثور على نتائج لـ: {keyword}**",
+            buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]],
+            parse_mode='md'
+        )
+
+# ============================================
+# نظام الخدمات المميزة
+# ============================================
+@bot.on(events.CallbackQuery(data=b"privacy_check"))
+async def privacy_check_start(event):
+    user_id = event.sender_id
+    user_states[user_id] = "waiting_privacy_check"
+    await event.edit(
+        "🛡️ **فحص خصوصية الحساب**\n\n"
+        "📤 أرسل يوزر الحساب للفحص:\n"
+        "مثال: @username\n\n"
+        "🔍 سنفحص:\n"
+        "• الإيميلات المكشوفة\n"
+        "• الأرقام المكشوفة\n"
+        "• المعلومات الحساسة\n"
+        "• الروابط المرتبطة",
+        buttons=[[Button.inline("🔙 رجوع", b"premium_menu")]],
+        parse_mode='md'
+    )
+
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and user_states[e.sender_id] == "waiting_privacy_check"))
+async def handle_privacy_check(event):
+    user_id = event.sender_id
+    user_states.pop(user_id, None)
+    username = event.text.strip().replace("@", "")
+    
+    loading_msg = await event.respond("🛡️ **جاري فحص الخصوصية...**", parse_mode='md')
+    
+    info = await AccountInfoFetcher.get_telegram_info(username)
+    
+    if info.get("exists"):
+        risk_score = 0
+        risks = []
+        
+        if info.get("exposed_emails"):
+            risk_score += 30
+            risks.append(f"📧 إيميلات مكشوفة: {len(info['exposed_emails'])}")
+        
+        if info.get("exposed_phones"):
+            risk_score += 40
+            risks.append(f"📞 أرقام مكشوفة: {len(info['exposed_phones'])}")
+        
+        if info.get("bio"):
+            if len(info["bio"]) > 100:
+                risk_score += 10
+                risks.append("📝 بايو طويل قد يحتوي معلومات شخصية")
+            
+            # فحص الروابط في البايو
+            urls = re.findall(r'https?://[^\s]+', info["bio"])
+            if urls:
+                risk_score += 15
+                risks.append(f"🔗 روابط خارجية: {len(urls)}")
+        
+        risk_level = "🟢 آمن" if risk_score < 20 else "🟡 متوسط الخطورة" if risk_score < 50 else "🔴 خطر"
+        
+        text = f"🛡️ **تقرير خصوصية @{username}**\n\n"
+        text += f"📊 **مستوى الخطورة:** {risk_level} ({risk_score}/100)\n\n"
+        
+        if risks:
+            text += "⚠️ **المخاطر المكتشفة:**\n"
+            for risk in risks:
+                text += f"• {risk}\n"
+        else:
+            text += "✅ لم يتم اكتشاف مخاطر كبيرة\n"
+        
+        text += f"\n💡 **نصائح لتحسين الخصوصية:**\n"
+        text += "• إخفاء الإيميل من البايو\n"
+        text += "• تجنب وضع رقم الهاتف\n"
+        text += "• مراجعة الروابط الخارجية\n"
+        text += "• تقليل المعلومات الشخصية"
+        
+        await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"premium_menu")]], parse_mode='md')
+    else:
+        await loading_msg.edit("❌ **الحساب غير موجود**", buttons=[[Button.inline("🔙 رجوع", b"premium_menu")]], parse_mode='md')
+
+# ============================================
 # نظام الإحصائيات
 # ============================================
 @bot.on(events.CallbackQuery(data=b"stats_menu"))
@@ -1119,8 +1511,11 @@ async def stats_menu(event):
         f"🔒 معدل الحماية: 5 طلبات/دقيقة\n"
         f"🌐 المنصات المدعومة: 6\n"
         f"📥 منصات التحميل: 8+\n"
-        f"🧠 استراتيجيات الصيد: 15\n\n"
-        "⚡ **الإصدار:** Pro Max Ultra v3.0"
+        f"🧠 استراتيجيات الصيد: 15\n"
+        f"🔎 أنظمة التجميع: نشطة\n"
+        f"🛡️ فحص الخصوصية: متاح\n\n"
+        "⚡ **الإصدار:** Pro Max Ultra v3.0\n"
+        "👨‍💻 **Developer:** @NinjaGram"
     )
     
     await event.edit(text, buttons=[[Button.inline("🔙 رجوع", b"back_main")]], parse_mode='md')
@@ -1148,6 +1543,14 @@ async def info_menu_handler(event):
 @bot.on(events.CallbackQuery(data=b"check_menu"))
 async def check_menu_handler(event):
     await event.edit("✅ **فحص اليوزرات**\n\nاختر نوع الفحص:", buttons=UIManager.check_menu(), parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=b"scrape_menu"))
+async def scrape_menu_handler(event):
+    await event.edit("🔎 **تجميع الجروبات والقنوات**\n\nاختر نوع البحث:", buttons=UIManager.scrape_menu(), parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=b"premium_menu"))
+async def premium_menu_handler(event):
+    await event.edit("⭐ **خدمات مميزة**\n\nاختر الخدمة:", buttons=UIManager.premium_menu(), parse_mode='md')
 
 # ============================================
 # بدء التشغيل
