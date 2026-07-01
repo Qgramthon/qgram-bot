@@ -310,7 +310,7 @@ class SmartUsernameGenerator:
         return patterns
 
 # ============================================
-# نظام فحص متقدم متعدد المنصات
+# نظام فحص متقدم متعدد المنصات (تليجرام فقط t.me)
 # ============================================
 class UltimateUsernameChecker:
     USER_AGENTS = [
@@ -323,8 +323,7 @@ class UltimateUsernameChecker:
     
     CHECK_URLS = {
         "tg": [
-            "https://t.me/{username}",
-            "https://fragment.com/username/{username}"
+            "https://t.me/{username}"
         ],
         "ig": [
             "https://www.instagram.com/{username}/",
@@ -374,7 +373,7 @@ class UltimateUsernameChecker:
                     try:
                         async with session.get(url, headers=headers, timeout=8, allow_redirects=True) as resp:
                             if platform == "tg":
-                                available = await cls._check_telegram(resp, username)
+                                available = await cls._check_telegram(resp)
                             elif platform == "ig":
                                 available = await cls._check_instagram(resp)
                             elif platform == "tk":
@@ -409,22 +408,22 @@ class UltimateUsernameChecker:
         return None
     
     @classmethod
-    async def _check_telegram(cls, resp, username: str) -> bool:
+    async def _check_telegram(cls, resp) -> bool:
+        """فحص يوزر تيليجرام فقط من t.me بدون fragment"""
         if resp.status == 404:
             return True
         if resp.status == 200:
-            text = await resp.text()
-            if any(x in text.lower() for x in ['tgme_page_extra', 'join tg', 'you can contact']):
-                return False
-            if 'fragment.com' in str(resp.url):
-                if 'status' in text.lower() and 'unavailable' in text.lower():
+            try:
+                text = await resp.text()
+                # لو موجود فيه الكلمات دي يبقى الحساب موجود
+                if any(x in text.lower() for x in ['tgme_page_extra', 'join tg', 'you can contact', 'tgme_page_title']):
                     return False
-                if 'ton' in text.lower() and ('buy' in text.lower() or 'auction' in text.lower()):
+                # لو مش موجود الكلمات دي يبقى اليوزر متاح
+                if 'tgme_page' in text.lower():
                     return False
                 return True
-            if 'tgme_page_title' in text:
+            except:
                 return False
-            return True
         return False
     
     @classmethod
@@ -469,7 +468,7 @@ class UltimateUsernameChecker:
         return False
 
 # ============================================
-# نظام تحميل فيديو متعدد المصادر مع إرسال الفيديو
+# نظام تحميل فيديو متعدد المصادر (يوتيوب محسن)
 # ============================================
 class UltimateVideoDownloader:
     APIS = {
@@ -484,7 +483,8 @@ class UltimateVideoDownloader:
         ],
         "youtube": [
             "https://api.yt-dl.org/api/youtube?url={url}",
-            "https://loader.to/ajax/download.php?format=mp4&url={url}"
+            "https://loader.to/ajax/download.php?format=mp4&url={url}",
+            "https://ytdlp.online/api/download?url={url}"
         ],
         "facebook": [
             "https://api.fbdown.net/api/download?url={url}",
@@ -545,14 +545,35 @@ class UltimateVideoDownloader:
                 return {"success": True, "video_url": video_url, "platform": "انستجرام"}
         
         elif platform == "youtube":
-            video_url = data.get("download_url") or data.get("url")
-            if not video_url and "formats" in data:
+            # محاولة استخراج رابط الفيديو من صيغ مختلفة
+            video_url = None
+            if "download_url" in data:
+                video_url = data["download_url"]
+            elif "url" in data:
+                video_url = data["url"]
+            elif "formats" in data:
                 formats = data["formats"]
                 if formats:
                     best = max(formats, key=lambda x: x.get("quality", 0) if isinstance(x.get("quality"), int) else 0)
                     video_url = best.get("url")
+            elif "links" in data:
+                for link in data.get("links", []):
+                    if link.get("type") == "mp4":
+                        video_url = link.get("url")
+                        break
+            
             if video_url:
-                return {"success": True, "video_url": video_url, "platform": "يوتيوب", "title": data.get("title", "")}
+                return {
+                    "success": True,
+                    "video_url": video_url,
+                    "platform": "يوتيوب",
+                    "title": data.get("title", "")
+                }
+        
+        elif platform == "facebook":
+            video_url = data.get("download_url") or data.get("video_url") or data.get("url")
+            if video_url:
+                return {"success": True, "video_url": video_url, "platform": "فيسبوك"}
         
         return {"success": False}
 
@@ -656,7 +677,7 @@ class AccountInfoFetcher:
             return {"exists": False, "error": "تعذر العثور على المستخدم"}
 
 # ============================================
-# نظام تجميع الجروبات والقنوات (بدون bs4)
+# نظام تجميع الجروبات والقنوات (محسن)
 # ============================================
 class GroupScraper:
     @classmethod
@@ -664,31 +685,44 @@ class GroupScraper:
         results = []
         try:
             async with aiohttp.ClientSession() as session:
+                # استخدام مصادر متعددة للبحث
                 search_urls = [
                     f"https://t.me/s/{keyword}",
                     f"https://tgstat.com/search?q={keyword}",
+                    f"https://combot.org/search?q={keyword}",
                 ]
                 
                 for url in search_urls:
                     try:
                         headers = {'User-Agent': random.choice(UltimateUsernameChecker.USER_AGENTS)}
-                        async with session.get(url, headers=headers, timeout=10) as resp:
+                        async with session.get(url, headers=headers, timeout=15) as resp:
                             if resp.status == 200:
                                 text = await resp.text()
+                                # استخراج روابط القنوات والجروبات من النص
                                 links = re.findall(r'https?://t\.me/([a-zA-Z0-9_]+)', text)
-                                for link in links[:limit]:
+                                # تصفية النتائج للتأكد من صلتها بالكلمة المفتاحية
+                                filtered_links = []
+                                for link in links:
+                                    # البحث عن الكلمة المفتاحية في الرابط أو النص المحيط
+                                    if keyword.lower() in link.lower() or keyword.lower() in text.lower():
+                                        filtered_links.append(link)
+                                
+                                for link in filtered_links[:limit]:
                                     if link not in [r['username'] for r in results]:
+                                        # تحديد النوع بناءً على طول اليوزر
+                                        group_type = 'channel' if len(link) > 10 else 'group'
                                         results.append({
                                             'username': link,
                                             'url': f"https://t.me/{link}",
-                                            'type': 'channel' if len(link) > 10 else 'group'
+                                            'type': group_type
                                         })
                     except:
                         continue
-        except:
-            pass
+                        
+        except Exception as e:
+            logger.error(f"Error scraping groups: {e}")
         
-        return results
+        return results[:limit]
 
 # ============================================
 # نظام الحماية ومكافحة السبام
@@ -844,7 +878,7 @@ async def bot_start(event):
         await bot.send_message(event.chat_id, caption, buttons=buttons, parse_mode='md')
 
 # ============================================
-# نظام الصيد الذكي المتقدم
+# نظام الصيد الذكي المتقدم (معالج تلقائي بدون ضغطات)
 # ============================================
 @bot.on(events.CallbackQuery(data=b"hunt_tg_smart"))
 async def hunt_telegram_smart(event):
@@ -856,6 +890,7 @@ async def hunt_telegram_smart(event):
     
     await event.edit("🧠 **جاري الصيد الذكي...**\n📊 تحليل الأنماط وتوليد اليوزرات\n⏳ قد يستغرق 2-3 دقائق", parse_mode='md')
     
+    # توليد اليوزرات بشكل ذكي
     usernames = SmartUsernameGenerator.generate_pool(500, "tg")
     found = []
     total = len(usernames)
@@ -1058,7 +1093,7 @@ async def video_download_handler(event):
     user_states[user_id] = f"waiting_video_{platform}"
     await event.edit(
         f"🎬 **تحميل من {platforms_ar.get(platform, platform)}**\n\n"
-        f"📤 أرسل رابط الفيديو:",
+        f"📤 أرسل رابط الفيديو مباشرة (بدون أوامر):",
         buttons=[[Button.inline("🔙 رجوع", b"video_menu")]],
         parse_mode='md'
     )
@@ -1122,7 +1157,7 @@ async def handle_video_download(event):
         )
 
 # ============================================
-# نظام معلومات الحسابات المتقدم
+# نظام معلومات الحسابات المتقدم (معالج تلقائي)
 # ============================================
 @bot.on(events.CallbackQuery(data=b"info_tg"))
 async def info_telegram_start(event):
@@ -1130,8 +1165,9 @@ async def info_telegram_start(event):
     user_states[user_id] = "waiting_info_tg"
     await event.edit(
         "🔍 **معلومات حساب تيليجرام**\n\n"
-        "📤 أرسل يوزر الحساب:\n"
-        "مثال: @username",
+        "📤 أرسل يوزر الحساب مباشرة:\n"
+        "مثال: @username\n"
+        "أو ارسل: username",
         buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
         parse_mode='md'
     )
@@ -1142,7 +1178,7 @@ async def info_telegram_id_start(event):
     user_states[user_id] = "waiting_info_tg_id"
     await event.edit(
         "🔍 **معلومات حساب تيليجرام بالآيدي**\n\n"
-        "📤 أرسل الآيدي الرقمي:\n"
+        "📤 أرسل الآيدي الرقمي مباشرة:\n"
         "مثال: 6443238809",
         buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
         parse_mode='md'
@@ -1154,7 +1190,7 @@ async def info_instagram_start(event):
     user_states[user_id] = "waiting_info_ig"
     await event.edit(
         "🔍 **معلومات حساب انستجرام**\n\n"
-        "📤 أرسل يوزر الحساب:\n"
+        "📤 أرسل يوزر الحساب مباشرة:\n"
         "مثال: @username",
         buttons=[[Button.inline("🔙 رجوع", b"info_menu")]],
         parse_mode='md'
@@ -1295,9 +1331,9 @@ async def open_by_id_start(event):
     user_states[user_id] = "waiting_open_id"
     await event.edit(
         "🔗 **فتح حساب بالآيدي**\n\n"
-        "📤 أرسل الآيدي الرقمي:\n"
-        "مثال: 6443238809\n\n"
-        "🔄 أو أرسل يوزر لتحويله لآيدي: @username",
+        "📤 أرسل الآيدي الرقمي أو اليوزر مباشرة:\n"
+        "مثال: 6443238809\n"
+        "أو: @username",
         buttons=[[Button.inline("🔙 رجوع", b"back_main")]],
         parse_mode='md'
     )
@@ -1308,7 +1344,7 @@ async def resolve_start(event):
     user_states[user_id] = "waiting_resolve"
     await event.edit(
         "🔄 **تحويل يوزر إلى آيدي والعكس**\n\n"
-        "📤 أرسل اليوزر أو الآيدي:\n"
+        "📤 أرسل اليوزر أو الآيدي مباشرة:\n"
         "مثال: @username أو 6443238809",
         buttons=[[Button.inline("🔙 رجوع", b"back_main")]],
         parse_mode='md'
@@ -1382,7 +1418,7 @@ async def check_all_platforms_start(event):
     user_states[user_id] = "waiting_check_all"
     await event.edit(
         "🌐 **فحص يوزر في كل المنصات**\n\n"
-        "📤 أرسل اليوزر للفحص:\n"
+        "📤 أرسل اليوزر للفحص مباشرة:\n"
         "مثال: @username",
         buttons=[[Button.inline("🔙 رجوع", b"check_menu")]],
         parse_mode='md'
@@ -1394,7 +1430,7 @@ async def check_tg_start(event):
     user_states[user_id] = "waiting_check_tg"
     await event.edit(
         "📱 **فحص يوزر في تيليجرام**\n\n"
-        "📤 أرسل اليوزر للفحص:\n"
+        "📤 أرسل اليوزر للفحص مباشرة:\n"
         "مثال: @username",
         buttons=[[Button.inline("🔙 رجوع", b"check_menu")]],
         parse_mode='md'
@@ -1464,7 +1500,7 @@ async def handle_check_tg(event):
     await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"check_menu")]], parse_mode='md')
 
 # ============================================
-# نظام تجميع الجروبات والقنوات
+# نظام تجميع الجروبات والقنوات (محسن ودقيق)
 # ============================================
 @bot.on(events.CallbackQuery(data=b"scrape_groups"))
 async def scrape_groups_start(event):
@@ -1472,8 +1508,9 @@ async def scrape_groups_start(event):
     user_states[user_id] = "waiting_scrape_groups"
     await event.edit(
         "🔍 **تجميع الجروبات العامة**\n\n"
-        "📤 أرسل الكلمة المفتاحية للبحث:\n"
-        "مثال: برمجة، تسويق، العاب",
+        "📤 أرسل الكلمة المفتاحية للبحث مباشرة:\n"
+        "مثال: برمجة، تسويق، العاب\n"
+        "✍️ اكتب الكلمة بدون أوامر",
         buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]],
         parse_mode='md'
     )
@@ -1482,20 +1519,34 @@ async def scrape_groups_start(event):
 async def handle_scrape_groups(event):
     user_id = event.sender_id
     user_states.pop(user_id, None)
-    keyword = event.text.strip()
+    keyword = event.text.strip().lower()
     
     loading_msg = await event.respond(f"🔍 **جاري البحث عن جروبات: {keyword}**\n⏳ يرجى الانتظار...", parse_mode='md')
     
     groups = await GroupScraper.scrape_public_groups(keyword, 20)
     
     if groups:
-        text = f"📊 **نتائج البحث عن: {keyword}**\n\n"
-        text += f"✅ تم العثور على {len(groups)} جروب/قناة:\n\n"
+        # تصفية النتائج للتأكد من صلتها بالكلمة المفتاحية
+        relevant_groups = []
+        for group in groups:
+            if keyword in group['username'].lower() or keyword in group['url'].lower():
+                relevant_groups.append(group)
         
-        for i, group in enumerate(groups[:15], 1):
-            text += f"{i}. [{group['username']}]({group['url']}) | {group['type']}\n"
-        
-        await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]], parse_mode='md')
+        if relevant_groups:
+            text = f"📊 **نتائج البحث عن: {keyword}**\n\n"
+            text += f"✅ تم العثور على {len(relevant_groups)} جروب/قناة:\n\n"
+            
+            for i, group in enumerate(relevant_groups[:15], 1):
+                text += f"{i}. {group['username']} | {group['type']}\n"
+                text += f"   🔗 {group['url']}\n"
+            
+            await loading_msg.edit(text, buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]], parse_mode='md')
+        else:
+            await loading_msg.edit(
+                f"❌ **لم يتم العثور على نتائج دقيقة لـ: {keyword}**\n💡 جرب كلمة مفتاحية أخرى",
+                buttons=[[Button.inline("🔙 رجوع", b"scrape_menu")]],
+                parse_mode='md'
+            )
     else:
         await loading_msg.edit(
             f"❌ **لم يتم العثور على نتائج لـ: {keyword}**",
@@ -1512,7 +1563,7 @@ async def privacy_check_start(event):
     user_states[user_id] = "waiting_privacy_check"
     await event.edit(
         "🛡️ **فحص خصوصية الحساب**\n\n"
-        "📤 أرسل يوزر الحساب للفحص:\n"
+        "📤 أرسل يوزر الحساب للفحص مباشرة:\n"
         "مثال: @username\n\n"
         "🔍 سنفحص:\n"
         "• الإيميلات المكشوفة\n"
