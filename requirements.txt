@@ -1,31 +1,50 @@
-flask
-telethon
-cryptg
-gunicorn
-Pillow
-requests
-yt-dlp
-SpeechRecognition
-pydub
-aiohttp
-psutil
-aiofiles
-httpx[http2]
-pytube
-duckduckgo_search
+# ============ Core Framework ============
+flask>=3.0.0,<4.0.0
+gunicorn>=21.2.0,<22.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# ============ Telegram Clients ============
+telethon>=1.36.0,<2.0.0
+pyrogram>=2.0.106,<3.0.0
+TgCrypto>=1.2.5,<2.0.0
+cryptg>=0.4.0,<0.5.0
+
+# ============ Telegram Bot ============
 python-telegram-bot==20.7
-python-dotenv
-pyrogram
-TgCrypto
-beautifulsoup4
-lxml
-cloudscraper
-fake-useragent
-phonenumbers
-cryptography
-pycryptodome
-opencv-python-headless
-colorama
-rich
-tqdm
-loguru
+
+# ============ Async & HTTP ============
+aiohttp>=3.9.0,<4.0.0
+aiofiles>=23.2.0,<24.0.0
+httpx[http2]>=0.27.0,<1.0.0
+requests>=2.31.0,<3.0.0
+cloudscraper>=1.2.71,<2.0.0
+
+# ============ Image & Media ============
+Pillow>=10.0.0,<11.0.0
+opencv-python-headless>=4.9.0,<5.0.0
+
+# ============ Audio & Video ============
+SpeechRecognition>=3.10.0,<4.0.0
+pydub>=0.25.1,<0.26.0
+yt-dlp>=2024.0.0,<2025.0.0
+pytube>=15.0.0,<16.0.0
+
+# ============ Web Scraping ============
+beautifulsoup4>=4.12.0,<5.0.0
+lxml>=5.1.0,<6.0.0
+duckduckgo_search>=5.0.0,<6.0.0
+
+# ============ Security & Crypto ============
+phonenumbers>=8.13.0,<9.0.0
+cryptography>=41.0.0,<42.0.0
+pycryptodome>=3.20.0,<4.0.0
+fake-useragent>=1.5.0,<2.0.0
+
+# ============ System & Utils ============
+psutil>=5.9.0,<6.0.0
+
+# ============ Terminal UI ============
+colorama>=0.4.6,<1.0.0
+rich>=13.7.0,<14.0.0
+tqdm>=4.66.0,<5.0.0
+loguru>=0.7.0,<1.0.0
