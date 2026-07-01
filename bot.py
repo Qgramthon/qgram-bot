@@ -1,5 +1,5 @@
 # Ultimate NinjaGram Pro Max Ultra Bot
-import asyncio, uuid, os, re, random, string, aiohttp, json, time
+import asyncio, uuid, os, re, random, string, aiohttp, json, time, sys
 from datetime import datetime
 from urllib.parse import quote, urlencode
 from telethon import TelegramClient, events, Button, functions, types
@@ -12,6 +12,19 @@ from typing import Optional, Dict, List, Set, Tuple, Any
 from dataclasses import dataclass, field
 import logging
 from concurrent.futures import ThreadPoolExecutor
+
+# ============================================
+# استيراد الإعدادات من ملف الشيرد
+# ============================================
+# تحميل متغيرات البيئة من الشيرد
+DATA_DIR = '/data' if os.path.exists('/data') else '.'
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# استيراد المتغيرات من الشيرد مباشرة
+BOT_TOKEN = '7998616214:AAFGroKKmwnrOtyAeJIHmrs_bKW5jXl0B20'
+BOT_API_ID = 2040
+BOT_API_HASH = 'b18441a1ff607e10a989891a5462e627'
+DEV_USER_ID = 6443238809
 
 # ============================================
 # تهيئة متقدمة
@@ -28,6 +41,26 @@ rate_limiter: Dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
 CACHE_TTL = 300  # 5 دقائق
 username_cache: Dict[str, Tuple[float, Optional[str]]] = {}
 thread_pool = ThreadPoolExecutor(max_workers=20)
+
+# ============================================
+# دالة التحقق من المطور (متوافقة مع الشيرد)
+# ============================================
+def is_dev(user_id: int) -> bool:
+    """التحقق من صلاحيات المطور"""
+    return user_id == DEV_USER_ID
+
+# ============================================
+# دالة لوحة تحكم المطور
+# ============================================
+def dev_panel_markup():
+    """أزرار لوحة تحكم المطور"""
+    return [
+        [Button.inline("📊 إحصائيات البوت", b"bot_stats"),
+         Button.inline("👥 المستخدمين", b"bot_users")],
+        [Button.inline("📢 إرسال رسالة للكل", b"broadcast_start"),
+         Button.inline("⚙️ إعدادات متقدمة", b"advanced_settings")],
+        [Button.inline("🔙 القائمة الرئيسية", b"back_main")],
+    ]
 
 # ============================================
 # هيكل البيانات المتقدم
@@ -94,10 +127,7 @@ class SmartUsernameGenerator:
             except Exception as e:
                 logger.error(f"Strategy error: {e}")
         
-        # إزالة اليوزرات الطويلة جداً أو القصيرة جداً
         pool = {u for u in pool if 3 <= len(u) <= 15}
-        
-        # ترتيب حسب الجودة
         return sorted(list(pool), key=lambda x: cls._quality_score(x), reverse=True)[:count]
     
     @classmethod
@@ -106,21 +136,17 @@ class SmartUsernameGenerator:
         score = 0.0
         length = len(username)
         
-        # الطول المثالي 4-8
         if 4 <= length <= 8:
             score += 3
         elif length <= 12:
             score += 1
         
-        # وجود أرقام مميزة
         if any(num in username for num in cls.LUCKY[:5]):
             score += 2
         
-        # أحرف متكررة جذابة
         if re.search(r'(.)\1', username):
             score += 1.5
         
-        # توازن الأحرف والأرقام
         letters = sum(c.isalpha() for c in username)
         digits = sum(c.isdigit() for c in username)
         if letters > 0 and digits > 0:
@@ -128,7 +154,6 @@ class SmartUsernameGenerator:
             if 1 <= ratio <= 4:
                 score += 2
         
-        # كلمات مميزة
         for word in cls.PREMIUM_WORDS:
             if word in username.upper():
                 score += 5
@@ -138,7 +163,6 @@ class SmartUsernameGenerator:
     
     @classmethod
     def _pattern_based(cls, count: int) -> Set[str]:
-        """أنماط CVC, CVV, VCV"""
         patterns = set()
         vowels, consonants = cls.VOWELS, cls.CONSONANTS
         nums = cls.NUMBERS
@@ -307,7 +331,6 @@ class UltimateUsernameChecker:
         "Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0"
     ]
     
-    # نطاقات الفحص لكل منصة
     CHECK_URLS = {
         "tg": [
             "https://t.me/{username}",
@@ -340,7 +363,6 @@ class UltimateUsernameChecker:
         """فحص يوزر مع كاش متقدم"""
         cache_key = f"{platform}:{username.lower()}"
         
-        # فحص الكاش
         if cache_key in username_cache:
             timestamp, result = username_cache[cache_key]
             if time.time() - timestamp < CACHE_TTL:
@@ -380,7 +402,6 @@ class UltimateUsernameChecker:
                     except:
                         continue
                 
-                # تحديث الكاش
                 username_cache[cache_key] = (time.time(), username if available else None)
                 
                 if available:
@@ -405,17 +426,14 @@ class UltimateUsernameChecker:
             return True
         if resp.status == 200:
             text = await resp.text()
-            # علامات الحساب المحذوف أو غير الموجود
             if any(x in text.lower() for x in ['tgme_page_extra', 'join tg', 'you can contact']):
                 return False
-            # Fragment check
             if 'fragment.com' in str(resp.url):
                 if 'status' in text.lower() and 'unavailable' in text.lower():
                     return False
                 if 'ton' in text.lower() and ('buy' in text.lower() or 'auction' in text.lower()):
                     return False
                 return True
-            # t.me check
             if 'tgme_page_title' in text:
                 return False
             return True
@@ -562,14 +580,12 @@ class AccountInfoFetcher:
             async with aiohttp.ClientSession() as session:
                 headers = {'User-Agent': random.choice(UltimateUsernameChecker.USER_AGENTS)}
                 
-                # جلب من t.me
                 async with session.get(f"https://t.me/{username}", headers=headers, timeout=10) as resp:
                     text = await resp.text()
                 
                 info = {"username": username, "exists": resp.status == 200}
                 
                 if info["exists"]:
-                    # استخراج المعلومات
                     title_match = re.search(r'<meta property="og:title" content="([^"]+)"', text)
                     image_match = re.search(r'<meta property="og:image" content="([^"]+)"', text)
                     desc_match = re.search(r'<meta property="og:description" content="([^"]+)"', text)
@@ -578,11 +594,9 @@ class AccountInfoFetcher:
                     info["profile_image"] = image_match.group(1) if image_match else None
                     info["bio"] = desc_match.group(1) if desc_match else ""
                     
-                    # تحقق من نوع الحساب
                     info["is_verified"] = "verified" in text.lower()
                     info["is_premium"] = "premium" in text.lower()
                     
-                    # تقدير عدد المشتركين للقنوات
                     subs_match = re.search(r'(\d+[,\s]*\d*)\s*(subscribers|مشترك)', text, re.IGNORECASE)
                     if subs_match:
                         info["subscribers"] = subs_match.group(1)
@@ -631,9 +645,11 @@ class SecuritySystem:
     def check_rate_limit(cls, user_id: int, action: str, max_per_minute: int = 10) -> bool:
         """فحص معدل الاستخدام"""
         now = time.time()
-        user_requests = rate_limiter.get(f"{user_id}:{action}", deque(maxlen=max_per_minute))
+        key = f"{user_id}:{action}"
+        if key not in rate_limiter:
+            rate_limiter[key] = deque(maxlen=max_per_minute)
+        user_requests = rate_limiter[key]
         
-        # إزالة الطلبات القديمة
         while user_requests and user_requests[0] < now - 60:
             user_requests.popleft()
         
@@ -641,7 +657,6 @@ class SecuritySystem:
             return False
         
         user_requests.append(now)
-        rate_limiter[f"{user_id}:{action}"] = user_requests
         return True
     
     @classmethod
@@ -659,15 +674,6 @@ class SecuritySystem:
 # ============================================
 class UIManager:
     """مدير واجهة المستخدم"""
-    
-    EMOJIS = {
-        "tg": "📱", "ig": "📷", "tk": "🎵", "fb": "📘",
-        "gh": "🐙", "x": "🐦", "yt": "▶️", "pi": "📌",
-        "search": "🔍", "download": "📥", "check": "✅",
-        "error": "❌", "loading": "⏳", "success": "🎉",
-        "warning": "⚠️", "info": "ℹ️", "star": "⭐",
-        "fire": "🔥", "crown": "👑", "diamond": "💎"
-    }
     
     @classmethod
     def main_menu(cls):
@@ -778,10 +784,7 @@ async def hunt_telegram_smart(event):
     
     await event.edit("🧠 **جاري الصيد الذكي...**\n📊 تحليل الأنماط وتوليد اليوزرات\n⏳ قد يستغرق 2-3 دقائق", parse_mode='md')
     
-    # توليد يوزرات ذكية
     usernames = SmartUsernameGenerator.generate_pool(500, "tg")
-    
-    # فحص متوازي
     found = []
     total = len(usernames)
     checked = 0
@@ -796,7 +799,6 @@ async def hunt_telegram_smart(event):
                 result = await UltimateUsernameChecker.check_availability(u, "tg", session, sem)
                 checked += 1
                 
-                # تحديث كل 100 يوزر
                 if checked % 100 == 0:
                     elapsed = time.time() - start_time
                     speed = checked / elapsed if elapsed > 0 else 0
@@ -820,7 +822,6 @@ async def hunt_telegram_smart(event):
     elapsed = time.time() - start_time
     
     if found:
-        # ترتيب حسب الجودة
         found.sort(key=lambda x: x.quality_score, reverse=True)
         
         text = f"🎉 **اكتمل الصيد الذكي!**\n\n"
@@ -919,7 +920,6 @@ async def hunt_all_platforms(event):
     
     text += f"\n📊 **الإجمالي: {total_available} يوزر متاح**\n\n"
     
-    # عرض أفضل اليوزرات من كل منصة
     for platform, results in all_results.items():
         if results:
             results.sort(key=lambda x: x.quality_score, reverse=True)
