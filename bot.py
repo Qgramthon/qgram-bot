@@ -1,1972 +1,716 @@
-#!/usr/bin/env python3
-# 🧨 NinjaGram Pro Max Ultra v9.0
-# أقوى بوت أدوات تيليجرام وواتساب
-# Developer: @NinjaGram | Channel: @Q_g_r_a_m
-
-import asyncio, uuid, os, re, random, string, time, io, logging, json
-import hashlib, base64, textwrap, secrets
+import asyncio, uuid, os, re, random, time, io, json, textwrap, base64, hashlib
 from datetime import datetime, timedelta
-from urllib.parse import quote, urlencode
-from typing import Optional, Dict, List, Set, Tuple, Any
-from collections import defaultdict, deque, Counter
-from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
+from typing import Dict, List, Optional
+from collections import deque, defaultdict
 from io import BytesIO
 
-# الأساسيات
 import aiohttp
-import requests
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw
 import phonenumbers
-from phonenumbers import geocoder, carrier, timezone
+from phonenumbers import geocoder, carrier, timezone as pn_timezone
+from fake_useragent import UserAgent
 
-# تيليجرام
 from telethon import TelegramClient, events, Button, functions, types
 from telethon.errors import *
 from telethon.tl.functions.users import GetFullUserRequest
-from telethon.tl.functions.messages import (
-    CheckChatInviteRequest, ImportChatInviteRequest, 
-    GetHistoryRequest, SearchRequest
-)
-from telethon.tl.functions.channels import (
-    JoinChannelRequest, GetFullChannelRequest, 
-    InviteToChannelRequest
-)
-from telethon.tl.functions.contacts import (
-    ResolveUsernameRequest, ImportContactsRequest,
-    DeleteContactsRequest
-)
-from telethon.tl.functions.account import UpdateProfileRequest
-from telethon.tl.types import (
-    InputPhoneContact, InputPeerUser, InputPeerChannel,
-    MessageEntityMention, MessageEntityUrl
-)
-from telethon.sessions import StringSession
+from telethon.tl.functions.messages import CheckChatInviteRequest, SearchRequest
+from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.contacts import ImportContactsRequest, DeleteContactsRequest
+from telethon.tl.types import InputPhoneContact
 
-# أدوات إضافية
-import psutil
-import aiofiles
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
-import cloudscraper
+from shared import *
 
-# ==================== الإعدادات ====================
-DATA_DIR = '/app/data' if os.path.exists('/app/data') else './data'
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(f'{DATA_DIR}/sessions', exist_ok=True)
-os.makedirs(f'{DATA_DIR}/logs', exist_ok=True)
-os.makedirs(f'{DATA_DIR}/downloads', exist_ok=True)
-
-BOT_TOKEN = '7998616214:AAFGroKKmwnrOtyAeJIHmrs_bKW5jXl0B20'
-BOT_API_ID = 2040
-BOT_API_HASH = 'b18441a1ff607e10a989891a5462e627'
-DEV_USER_ID = 6443238809
-
-# ==================== إعداد التسجيل ====================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f'{DATA_DIR}/logs/bot.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger('NinjaGram')
-
-# ==================== المتغيرات العامة ====================
-bot = TelegramClient(f'{DATA_DIR}/sessions/bot_session', BOT_API_ID, BOT_API_HASH)
-user_states: Dict[int, str] = {}
-pending_data: Dict[int, Dict] = {}
-rate_limiter: Dict[str, deque] = defaultdict(lambda: deque(maxlen=10))
-allowed_chats: Set[int] = set()
-username_cache: Dict[str, Tuple[float, Optional[str]]] = {}
-thread_pool = ThreadPoolExecutor(max_workers=30)
+bot = TelegramClient(f'{DATA_DIR}/sessions/bot', BOT_API_ID, BOT_API_HASH)
 ua = UserAgent()
-scraper = cloudscraper.create_scraper()
 
-# ==================== نظام الحماية ====================
-class SecuritySystem:
+# ============================================================
+class Security:
     @staticmethod
-    def check_rate(user_id: int, action: str, max_per_min: int = 10) -> bool:
+    def rate(uid, action, mx=10):
         now = time.time()
-        key = f"{user_id}:{action}"
-        if key not in rate_limiter:
-            rate_limiter[key] = deque(maxlen=max_per_min)
-        reqs = rate_limiter[key]
-        while reqs and reqs[0] < now - 60:
-            reqs.popleft()
-        if len(reqs) >= max_per_min:
-            return False
-        reqs.append(now)
+        k = f"{uid}:{action}"
+        if k not in rate_limiter: rate_limiter[k] = deque(maxlen=mx)
+        r = rate_limiter[k]
+        while r and r[0] < now - 60: r.popleft()
+        if len(r) >= mx: return False
+        r.append(now)
         return True
-    
-    @staticmethod
-    def validate_username(username: str) -> bool:
-        return bool(re.match(r'^[a-zA-Z][a-zA-Z0-9_]{3,31}$', username))
-    
-    @staticmethod
-    def validate_phone(phone: str) -> bool:
-        try:
-            parsed = phonenumbers.parse(phone)
-            return phonenumbers.is_valid_number(parsed)
-        except:
-            return bool(re.match(r'^\+?[1-9]\d{7,14}$', phone.replace(" ", "")))
 
-# ==================== نظام تروكولر الحقيقي ====================
-class TruecallerSystem:
-    """نظام تروكولر حقيقي باستخدام مصادر متعددة"""
-    
-    API_ENDPOINTS = {
-        "numverify": "http://apilayer.net/api/validate?access_key={key}&number={number}",
-        "veriphone": "https://api.veriphone.io/v2/verify?phone={number}&key={key}",
-        "abstractapi": "https://phonevalidation.abstractapi.com/v1/?api_key={key}&phone={number}",
-    }
-    
-    SEARCH_ENGINES = [
-        "https://www.google.com/search?q={number}",
-        "https://search.yahoo.com/search?p={number}",
-        "https://duckduckgo.com/?q={number}",
-        "https://www.bing.com/search?q={number}",
-    ]
-    
-    BREACH_APIS = [
-        "https://haveibeenpwned.com/api/v3/breachedaccount/{email}",
-        "https://leakcheck.io/api/public?key={key}&check={query}",
-        "https://api.dehashed.com/search?query={query}",
-    ]
-    
+    @staticmethod
+    def valid_un(u): return bool(re.match(r'^[a-zA-Z][a-zA-Z0-9_]{3,31}$', u))
+
+    @staticmethod
+    def valid_ph(p):
+        try: return phonenumbers.is_valid_number(phonenumbers.parse(p))
+        except: return bool(re.match(r'^\+?[1-9]\d{7,14}$', p.replace(" ", "")))
+
+# ============================================================
+class Truecaller:
     @classmethod
-    async def lookup_phone(cls, phone: str) -> Dict:
-        """بحث شامل عن رقم الهاتف"""
-        result = {
-            "phone": phone,
-            "valid": False,
-            "carrier": None,
-            "country": None,
-            "location": None,
-            "line_type": None,
-            "social_media": [],
-            "breaches": [],
-            "risk_score": 0,
-            "spam_reports": 0,
-        }
-        
+    async def lookup(cls, phone):
+        r = {"phone": phone, "valid": False, "carrier": "?", "country": "?", "location": "?", "social": [], "spam": 0, "risk": 0}
         try:
-            parsed = phonenumbers.parse(phone)
-            result["valid"] = phonenumbers.is_valid_number(parsed)
-            result["carrier"] = carrier.name_for_number(parsed, "en") or "غير معروف"
-            result["country"] = geocoder.description_for_number(parsed, "en") or "غير معروف"
-            result["location"] = geocoder.description_for_number(parsed, "ar") or "غير معروف"
-            result["line_type"] = str(phonenumbers.number_type(parsed))
-        except:
-            pass
-        
-        # فحص في محركات البحث
-        clean_phone = re.sub(r'[^\d]', '', phone)
-        for search_url in cls.SEARCH_ENGINES:
+            p = phonenumbers.parse(phone)
+            r["valid"] = phonenumbers.is_valid_number(p)
+            r["carrier"] = carrier.name_for_number(p, "en") or "?"
+            r["country"] = geocoder.description_for_number(p, "en") or "?"
+            r["location"] = geocoder.description_for_number(p, "ar") or "?"
+        except: pass
+        clean = re.sub(r'[^\d]', '', phone)
+        async with aiohttp.ClientSession() as s:
+            for u in [f"https://www.google.com/search?q={clean}", f"https://duckduckgo.com/?q={clean}"]:
+                try:
+                    async with s.get(u, headers={'User-Agent': ua.random}, timeout=10) as resp:
+                        t = await resp.text()
+                        for kw in ['spam', 'scam', 'fraud', 'احتيال', 'مزعج']:
+                            if kw in t.lower(): r["spam"] += 1
+                        for plat in ['facebook.com', 'instagram.com', 'twitter.com', 'telegram.me', 'wa.me']:
+                            if plat in t.lower() and plat not in r["social"]: r["social"].append(plat)
+                except: pass
+        risk = min(r["spam"] * 15, 60) + (20 if not r["valid"] else 0)
+        r["risk"] = min(risk, 100)
+        r["level"] = "🟢" if risk < 30 else "🟡" if risk < 60 else "🔴"
+        return r
+
+    @classmethod
+    async def reverse(cls, name):
+        res = []
+        async with aiohttp.ClientSession() as s:
             try:
-                url = search_url.format(number=clean_phone)
-                async with aiohttp.ClientSession() as session:
-                    headers = {'User-Agent': ua.random}
-                    async with session.get(url, headers=headers, timeout=10) as resp:
-                        text = await resp.text()
-                        
-                        # البحث عن إشارات سبام
-                        spam_keywords = ['spam', 'scam', 'fraud', 'احتيال', 'مزعج', 'scammer']
-                        for keyword in spam_keywords:
-                            if keyword.lower() in text.lower():
-                                result["spam_reports"] += 1
-                        
-                        # البحث عن منصات اجتماعية
-                        social_platforms = [
-                            'facebook.com', 'instagram.com', 'twitter.com', 
-                            'linkedin.com', 'snapchat.com', 'tiktok.com',
-                            'telegram.me', 'wa.me', 'vk.com'
-                        ]
-                        for platform in social_platforms:
-                            if platform in text.lower():
-                                result["social_media"].append(platform)
-            except:
-                pass
-        
-        # حساب درجة الخطورة
-        risk = 0
-        if result["spam_reports"] > 0:
-            risk += min(result["spam_reports"] * 15, 60)
-        if not result["valid"]:
-            risk += 20
-        if len(result["social_media"]) == 0:
-            risk += 10
-        
-        result["risk_score"] = min(risk, 100)
-        result["risk_level"] = (
-            "🟢 آمن" if risk < 30 else
-            "🟡 مشبوه" if risk < 60 else
-            "🔴 خطير"
-        )
-        
-        return result
-    
-    @classmethod
-    async def reverse_lookup(cls, name: str) -> List[Dict]:
-        """بحث عن شخص بالاسم"""
-        results = []
-        try:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': ua.random}
-                
-                # بحث في Google
-                url = f"https://www.google.com/search?q={quote(name + ' phone')}"
-                async with session.get(url, headers=headers, timeout=10) as resp:
-                    text = await resp.text()
-                    phones = re.findall(r'\+?[\d]{8,15}', text)
-                    for phone in phones[:10]:
-                        if SecuritySystem.validate_phone(phone):
-                            results.append({"phone": phone, "source": "web"})
-                
-                # بحث في محركات مخصصة
-                people_search = [
-                    f"https://www.truepeoplesearch.com/results?name={quote(name)}",
-                    f"https://www.fastpeoplesearch.com/name/{quote(name)}",
-                ]
-                for ps_url in people_search:
-                    try:
-                        async with session.get(ps_url, headers=headers, timeout=10) as resp:
-                            text = await resp.text()
-                            phones = re.findall(r'\+?[\d]{8,15}', text)
-                            for phone in phones[:5]:
-                                if SecuritySystem.validate_phone(phone):
-                                    results.append({"phone": phone, "source": "people_search"})
-                    except:
-                        pass
-        except:
-            pass
-        
-        return results[:20]
+                async with s.get(f"https://www.google.com/search?q={quote(name + ' phone')}", headers={'User-Agent': ua.random}, timeout=10) as resp:
+                    for ph in re.findall(r'\+?[\d]{8,15}', await resp.text()):
+                        if Security.valid_ph(ph) and not any(x["phone"] == ph for x in res):
+                            res.append({"phone": ph, "source": "web"})
+            except: pass
+        return res[:20]
 
-# ==================== نظام البلاغات الشامل ====================
-class ReportSystem:
-    """نظام البلاغات الاحترافي لتليجرام وواتساب"""
-    
-    REPORT_TYPES = {
-        "spam": {
-            "name": "سبام / رسائل مزعجة",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Spam Report - {target}",
-            "severity": "medium"
-        },
-        "impersonation": {
-            "name": "انتحال شخصية",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Impersonation Report - {target}",
-            "severity": "high"
-        },
-        "threats": {
-            "name": "تهديدات",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Threat Report - {target}",
-            "severity": "high"
-        },
-        "terrorism": {
-            "name": "إرهاب / تطرف",
-            "telegram_email": "stopca@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "URGENT: Terrorism Content Report - {target}",
-            "severity": "critical"
-        },
-        "child_abuse": {
-            "name": "استغلال أطفال",
-            "telegram_email": "stopca@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "URGENT: Child Abuse Report - {target}",
-            "severity": "critical"
-        },
-        "pornography": {
-            "name": "محتوى إباحي غير قانوني",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Illegal Adult Content Report - {target}",
-            "severity": "high"
-        },
-        "fraud": {
-            "name": "احتيال مالي",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Fraud Report - {target}",
-            "severity": "high"
-        },
-        "drugs": {
-            "name": "مخدرات / مواد محظورة",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Illegal Drugs Report - {target}",
-            "severity": "high"
-        },
-        "weapons": {
-            "name": "أسلحة غير قانونية",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Illegal Weapons Report - {target}",
-            "severity": "high"
-        },
-        "violence": {
-            "name": "عنف / كراهية",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Violence & Hate Report - {target}",
-            "severity": "high"
-        },
-        "harassment": {
-            "name": "مضايقة / تنمر",
-            "telegram_email": "abuse@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Harassment Report - {target}",
-            "severity": "medium"
-        },
-        "copyright": {
-            "name": "انتهاك حقوق ملكية",
-            "telegram_email": "dmca@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "DMCA/Copyright Report - {target}",
-            "severity": "medium"
-        },
-        "account_theft": {
-            "name": "سرقة حساب",
-            "telegram_email": "recover@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Account Theft Report - {target}",
-            "severity": "high"
-        },
-        "malware": {
-            "name": "برمجيات خبيثة",
-            "telegram_email": "security@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Malware Report - {target}",
-            "severity": "high"
-        },
-        "phishing": {
-            "name": "تصيد / Phishing",
-            "telegram_email": "security@telegram.org",
-            "whatsapp_email": "support@whatsapp.com",
-            "subject": "Phishing Report - {target}",
-            "severity": "high"
-        },
+# ============================================================
+class Reporter:
+    TYPES = {
+        "spam": ("سبام", "abuse@telegram.org", "high", "This account is actively engaged in spam activities across multiple groups. User sends unsolicited promotional messages and phishing links. This violates Telegram ToS Section 3.1. Multiple users have reported this account. I request immediate account suspension.", "This number is being used for spam messaging in violation of WhatsApp policies. User sends bulk unwanted advertisements. Please investigate and ban."),
+        "impersonation": ("انتحال", "abuse@telegram.org", "critical", "This account is impersonating a known individual/organization. User copied profile picture and display name to deceive others. This is identity theft violating Telegram policy. Immediate termination requested.", "This number is being used to impersonate someone on WhatsApp. User uses fake profile to deceive people. Serious violation."),
+        "threats": ("تهديد", "abuse@telegram.org", "critical", "URGENT: This account sends direct threats of physical harm. Messages contain explicit violence threats and intimidation. This poses real safety risk requiring immediate intervention.", "URGENT: This number sends threatening messages and harasses users. Physical harm threats documented. Immediate action required."),
+        "terrorism": ("إرهاب", "stopca@telegram.org", "critical", "CRITICAL: Account spreading extremist content and terrorist propaganda. Material promotes violent extremism threatening public safety. Immediate security team review needed. Evidence preserved for authorities.", "CRITICAL: Number spreading extremist content. Threatens public safety. Immediate investigation required."),
+        "child_abuse": ("أطفال", "stopca@telegram.org", "critical", "CRITICAL EMERGENCY: Account suspected of child exploitation. Suspicious behavior related to minors observed. Requires immediate action and referral to authorities. All evidence preserved.", "CRITICAL: Number suspected of child exploitation. Being reported to authorities simultaneously. Immediate action required."),
+        "fraud": ("احتيال", "abuse@telegram.org", "critical", "Account running financial fraud operations. User scams people through fake investments and cryptocurrency schemes. Multiple victims reported losses. Immediate investigation and termination requested.", "Number used for financial fraud on WhatsApp. User tricks people into sending money through fake promises. Multiple victims affected."),
+        "drugs": ("مخدرات", "abuse@telegram.org", "critical", "Account openly advertising illegal drugs. User posts drug menus and delivery info. Serious criminal offense requiring immediate termination and law enforcement referral.", "Number selling illegal drugs through WhatsApp. User shares drug menus and coordinates sales. Immediate investigation required."),
+        "weapons": ("أسلحة", "abuse@telegram.org", "critical", "Account involved in illegal weapons trafficking. User advertises firearms and prohibited weapons. Serious criminal offense. All evidence documented.", "Number used for illegal weapons trading on WhatsApp. User advertises prohibited weapons. Immediate investigation required."),
+        "violence": ("عنف", "abuse@telegram.org", "high", "Account spreading hate speech and violent content. User promotes violence against specific groups. Violates Telegram hate speech policies. Account suspension requested.", "Number spreading hate speech on WhatsApp. User promotes violence and shares graphic material. Violates platform policies."),
+        "harassment": ("مضايقة", "abuse@telegram.org", "high", "Account engaged in systematic harassment. User sends repeated unwanted messages and engages in cyberbullying. Creates hostile environment. Intervention requested.", "Number used to harass users on WhatsApp with repeated unwanted messages and cyberbullying."),
+        "copyright": ("حقوق", "dmca@telegram.org", "high", "Account distributing copyrighted content without authorization. User shares pirated software, movies, and music. DMCA violation. Content removal and account review requested.", "Number distributing copyrighted content without permission on WhatsApp."),
+        "account_theft": ("سرقة", "recover@telegram.org", "critical", "URGENT: My account stolen by unauthorized parties. I lost access. Attacker impersonating me and contacting my contacts. Please help recover immediately.", "URGENT: WhatsApp account stolen. Someone took control and is impersonating me. Please help recover."),
+        "malware": ("هاك", "security@telegram.org", "critical", "Account distributing malware. User shares infected files and phishing links designed to steal data. Significant security threat. Immediate action required.", "Number sending malware through WhatsApp. User shares infected files to hack accounts."),
+        "phishing": ("تصيد", "security@telegram.org", "critical", "Account conducting phishing operations. User sends fake login pages to steal credentials. Serious security threat requiring immediate takedown.", "Number sending phishing links through WhatsApp to steal credentials."),
+        "pornography": ("إباحي", "abuse@telegram.org", "high", "Account distributing illegal adult content including non-consensual material. User shares explicit content without consent. Illegal and violates platform policies.", "Number distributing illegal adult content through WhatsApp without consent."),
     }
-    
+
     @classmethod
-    def generate_report(cls, report_type: str, target: str, 
-                        target_type: str = "telegram", 
-                        evidence: List[str] = None,
-                        reporter_name: str = "",
-                        reporter_email: str = "") -> Dict:
-        """توليد بلاغ احترافي"""
-        
-        report_info = cls.REPORT_TYPES.get(report_type, cls.REPORT_TYPES["spam"])
-        
-        report_id = f"NG-{uuid.uuid4().hex[:8].upper()}"
-        
-        if target_type == "telegram":
-            target_display = f"@{target}" if not target.isdigit() else f"ID: {target}"
-            platform_link = f"https://t.me/{target}" if not target.isdigit() else f"tg://openmessage?user_id={target}"
-        else:
-            target_display = target
-            platform_link = f"https://wa.me/{target.replace('+', '')}"
-        
-        evidence_list = []
-        if evidence:
-            for i, ev in enumerate(evidence, 1):
-                evidence_list.append(f"Evidence {i}: {ev}")
-        else:
-            evidence_list.append("• Screenshots of violation attached")
-            evidence_list.append("• Chat logs available upon request")
-            evidence_list.append("• Timestamp of violation documented")
-        
-        # نصوص بلاغات من مجتمعات الهكر والمبرمجين
-        hacker_templates = {
-            "spam": """
-This account is actively engaged in spam activities across multiple Telegram groups.
-The user sends unsolicited messages containing promotional content, phishing links, 
-and repetitive advertisements. This violates Telegram's Terms of Service Section 3.1.
-
-Impact: Multiple users have reported receiving these spam messages daily.
-Frequency: Continuous spam activity observed over the past period.
-            """,
-            "impersonation": """
-This account is impersonating [legitimate entity/person]. The user is using 
-similar usernames, profile pictures, and display names to deceive other users.
-This is a clear violation of Telegram's impersonation policy.
-
-The legitimate account can be verified at: [original account]
-The impersonator has been: [describe activities]
-            """,
-            "threats": """
-URGENT: This account is sending threatening messages to users, including 
-threats of physical harm, doxxing, and other forms of intimidation.
-This violates Telegram's Terms of Service and potentially local laws.
-
-Nature of threats: [describe threats]
-Targets: [describe affected users]
-            """,
-            "terrorism": """
-CRITICAL: This account is involved in spreading extremist content and 
-potentially terrorist-related material. Immediate review is requested.
-
-Type of content observed: [describe]
-This account poses a serious threat to platform safety.
-            """,
-            "child_abuse": """
-CRITICAL EMERGENCY: This account is suspected of involvement in child 
-exploitation activities. Immediate action and potential referral to 
-authorities is recommended.
-
-Observations: [describe suspicious activity]
-This is being reported to relevant authorities simultaneously.
-            """,
-        }
-        
-        detailed_description = hacker_templates.get(report_type, """
-This account has been observed violating Telegram's Terms of Service.
-The specific violation involves {violation_type}.
-Evidence has been collected and is available for review.
-        """.format(violation_type=report_info["name"]))
-        
-        # بناء البلاغ الكامل
-        report_email_body = f"""
-Subject: {report_info['subject'].format(target=target_display)}
-To: {report_info['telegram_email']}
-Priority: {report_info['severity'].upper()}
-
-{'='*60}
-TELEGRAM ABUSE REPORT
-Report ID: {report_id}
-Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
-Severity: {report_info['severity'].upper()}
-{'='*60}
-
-REPORTED ACCOUNT:
-- Platform: Telegram
-- Username/ID: {target_display}
-- Profile Link: {platform_link}
-
-VIOLATION TYPE:
-{report_info['name']}
-
-DETAILED DESCRIPTION:
-{detailed_description.strip()}
-
-EVIDENCE:
-{chr(10).join(evidence_list)}
-
-REPORTER INFORMATION:
-- Name: {reporter_name or '[Anonymous]'}
-- Contact: {reporter_email or '[Not provided]'}
-
-LEGAL NOTE:
-This report is submitted in good faith. All information provided is 
-accurate to the best of my knowledge. I understand that filing false 
-reports may result in account restrictions.
-
-I request Telegram Support to review this case and take appropriate 
-action in accordance with the Terms of Service.
-
-RELEVANT LINKS:
-- Telegram ToS: https://telegram.org/tos
-- Telegram FAQ: https://telegram.org/faq
-- Report Form: https://telegram.org/support
-
-{'='*60}
-        """
-        
-        whatsapp_body = f"""
-Subject: {report_info['subject'].format(target=target_display)}
-To: {report_info['whatsapp_email']}
-Priority: {report_info['severity'].upper()}
-
-{'='*60}
-WHATSAPP ABUSE REPORT
-Report ID: {report_id}
-Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
-{'='*60}
-
-REPORTED NUMBER: {target_display}
-VIOLATION: {report_info['name']}
+    def generate(cls, rtype, target, platform="telegram"):
+        name, email, sev, tg_body, wa_body = cls.TYPES.get(rtype, cls.TYPES["spam"])
+        rid = uuid.uuid4().hex[:12].upper()
+        tdisp = f"@{target}" if not target.isdigit() else f"ID:{target}"
+        plink = f"https://t.me/{target}" if platform == "telegram" else f"https://wa.me/{target.replace('+', '')}"
+        body = tg_body if platform == "telegram" else wa_body
+        full = f"""
+╔══════════════════════════════════════╗
+║   REPORT ID: #{rid}
+║   DATE: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+║   TARGET: {tdisp}
+║   LINK: {plink}
+║   VIOLATION: {name}
+║   SEVERITY: {sev.upper()}
+║   SEND TO: {email}
+╚══════════════════════════════════════╝
 
 DESCRIPTION:
-{detailed_description.strip()}
+{body}
 
 EVIDENCE:
-{chr(10).join(evidence_list)}
+• Screenshots available upon request
+• Chat logs documented with timestamps
+• Multiple witnesses available
 
-WHATSAPP SUPPORT LINKS:
-- Contact Form: https://www.whatsapp.com/contact/
-- Help Center: https://faq.whatsapp.com/
-- Report Spam: https://www.whatsapp.com/legal/
+⚠️ This report is submitted in good faith.
+All information provided is truthful and accurate.
 
-{'='*60}
-        """
-        
-        return {
-            "report_id": report_id,
-            "telegram_report": report_email_body.strip(),
-            "whatsapp_report": whatsapp_body.strip(),
-            "telegram_email": report_info["telegram_email"],
-            "whatsapp_email": report_info["whatsapp_email"],
-            "severity": report_info["severity"],
-            "report_type": report_info["name"],
-        }
+Generated by NinjaGram Pro Max Ultra
+        """.strip()
+        return {"id": rid, "body": full, "email": email, "severity": sev, "type": name}
 
-# ==================== نظام كشف رقم الهاتف (Russian Method) ====================
-class PhoneRevealer:
-    """نظام كشف رقم الهاتف من اليوزر - الطريقة الروسية"""
-    
-    @staticmethod
-    def generate_phone_numbers(country_prefix: str, start_range: int = 0, 
-                                end_range: int = 99999) -> List[str]:
-        """توليد أرقام هواتف محتملة"""
-        numbers = []
-        for i in range(start_range, end_range):
-            numbers.append(f"+{country_prefix}{i:07d}")
-        return numbers
-    
+# ============================================================
+class Osint:
     @classmethod
-    async def reveal_phone(cls, username: str, country_code: str = "20",
-                           start_prefix: str = "10") -> Dict:
-        """
-        محاولة كشف رقم الهاتف من اليوزر
-        الطريقة: استيراد جهات اتصال وفحص الـ mutual contacts
-        """
-        result = {
-            "username": username,
-            "phone_found": False,
-            "phone": None,
-            "attempts": 0,
-            "method": "Russian Contact Import"
-        }
-        
+    async def deep(cls, target):
+        r = {"basic": {}, "security": [], "activity": {}, "exposed": {}, "risk": 0}
         try:
-            # جلب معلومات اليوزر
-            entity = await bot.get_entity(username)
-            target_id = entity.id
-            
-            # توليد مجموعة أرقام للتجربة
-            test_numbers = []
-            prefixes = ["10", "11", "12", "15"] if country_code == "20" else [start_prefix]
-            
-            for prefix in prefixes:
-                for i in range(0, 10000, 100):  # تجربة 100 رقم لكل بادئة
-                    number = f"+{country_code}{prefix}{i:05d}"
-                    test_numbers.append(number)
-            
-            # تقسيم لدفعات (batches)
-            batch_size = 50
-            for i in range(0, len(test_numbers), batch_size):
-                batch = test_numbers[i:i+batch_size]
-                
-                try:
-                    # إنشاء جهات اتصال وهمية
-                    contacts = []
-                    for phone in batch:
-                        contact = InputPhoneContact(
-                            client_id=random.randint(100000, 999999),
-                            phone=phone,
-                            first_name=f"Test_{random.randint(1,9999)}",
-                            last_name=""
-                        )
-                        contacts.append(contact)
-                    
-                    # استيراد جهات الاتصال
-                    imported = await bot(ImportContactsRequest(contacts))
-                    
-                    # فحص النتائج
-                    if imported and imported.users:
-                        for user in imported.users:
-                            if user.id == target_id:
-                                # تم العثور على المستخدم
-                                # البحث عن الرقم المطابق
-                                for contact, phone in zip(contacts, batch):
-                                    if hasattr(user, 'phone') and user.phone:
-                                        result["phone_found"] = True
-                                        result["phone"] = phone
-                                        result["attempts"] = i + len(batch)
-                                        
-                                        # حذف جهات الاتصال للتنظيف
-                                        try:
-                                            await bot(DeleteContactsRequest([user]))
-                                        except:
-                                            pass
-                                        
-                                        return result
-                    
-                    # حذف جهات الاتصال المستوردة
-                    if imported and imported.users:
-                        try:
-                            await bot(DeleteContactsRequest(imported.users))
-                        except:
-                            pass
-                    
-                    result["attempts"] = i + len(batch)
-                    
-                    # انتظار لتجنب rate limit
-                    await asyncio.sleep(2)
-                    
-                except FloodWaitError as e:
-                    logger.warning(f"Flood wait: {e.seconds}s")
-                    await asyncio.sleep(e.seconds)
-                except Exception as e:
-                    logger.error(f"Batch error: {e}")
-                    continue
-            
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
-    
-    @classmethod
-    async def check_phone_registered(cls, phone: str) -> Dict:
-        """فحص إذا كان الرقم مسجل في تيليجرام"""
-        result = {
-            "phone": phone,
-            "registered": False,
-            "user_info": None
-        }
-        
-        try:
-            contact = InputPhoneContact(
-                client_id=random.randint(100000, 999999),
-                phone=phone,
-                first_name="Check",
-                last_name="User"
-            )
-            
-            imported = await bot(ImportContactsRequest([contact]))
-            
-            if imported and imported.users:
-                user = imported.users[0]
-                result["registered"] = True
-                result["user_info"] = {
-                    "id": user.id,
-                    "username": getattr(user, 'username', None),
-                    "first_name": getattr(user, 'first_name', ''),
-                    "last_name": getattr(user, 'last_name', ''),
-                }
-                
-                # تنظيف
-                try:
-                    await bot(DeleteContactsRequest([user]))
-                except:
-                    pass
-            
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
-
-# ==================== نظام OSINT المتقدم ====================
-class AdvancedOSINT:
-    """نظام جمع المعلومات المتقدم"""
-    
-    @classmethod
-    async def get_full_info(cls, user_input: str) -> Dict:
-        """جلب معلومات كاملة عن أي حساب"""
-        result = {
-            "basic": {},
-            "security": {},
-            "activity": {},
-            "exposed": {},
-            "risk_score": 0
-        }
-        
-        try:
-            # جلب الكيان
-            if user_input.isdigit():
-                entity = await bot.get_entity(int(user_input))
-            else:
-                username = user_input.replace("@", "")
-                entity = await bot.get_entity(username)
-            
-            if not entity:
-                return {"error": "الحساب غير موجود"}
-            
-            # معلومات أساسية
-            result["basic"] = {
+            entity = await bot.get_entity(int(target) if target.lstrip('-').isdigit() else target.replace("@", ""))
+            r["basic"] = {
                 "id": entity.id,
-                "username": getattr(entity, 'username', None),
-                "first_name": getattr(entity, 'first_name', ''),
-                "last_name": getattr(entity, 'last_name', ''),
-                "phone_visible": getattr(entity, 'phone', None) is not None,
+                "username": getattr(entity, 'username', "لا يوجد"),
+                "first": getattr(entity, 'first_name', ''),
+                "last": getattr(entity, 'last_name', ''),
+                "full": f"{getattr(entity, 'first_name', '')} {getattr(entity, 'last_name', '')}".strip(),
+                "phone_vis": getattr(entity, 'phone', None) is not None,
                 "phone": getattr(entity, 'phone', 'مخفي'),
-                "verified": getattr(entity, 'verified', False),
-                "premium": getattr(entity, 'premium', False),
-                "bot": getattr(entity, 'bot', False),
-                "scam": getattr(entity, 'scam', False),
-                "fake": getattr(entity, 'fake', False),
-                "restricted": getattr(entity, 'restricted', False),
-                "is_contact": getattr(entity, 'contact', False),
-                "mutual_contact": getattr(entity, 'mutual_contact', False),
+                "verified": "✅" if getattr(entity, 'verified', False) else "❌",
+                "premium": "⭐" if getattr(entity, 'premium', False) else "❌",
+                "bot": "🤖" if getattr(entity, 'bot', False) else "👤",
+                "scam": "⚠️" if getattr(entity, 'scam', False) else "✅",
+                "fake": "⚠️" if getattr(entity, 'fake', False) else "✅",
             }
-            
-            # تقدير تاريخ الإنشاء
-            creation = cls._estimate_date(entity.id)
-            if creation:
-                age_days = (datetime.now() - creation).days
-                result["activity"]["creation_date"] = creation.strftime("%Y-%m-%d")
-                result["activity"]["age_days"] = age_days
-                result["activity"]["age_years"] = round(age_days / 365, 1)
-            
-            # تحليل الأمان
+            cd = cls._est(entity.id)
+            if cd:
+                days = (datetime.now() - cd).days
+                r["activity"]["created"] = cd.strftime("%Y-%m-%d")
+                r["activity"]["age"] = f"{days} يوم ({round(days/365,1)} سنة)"
             risk = 0
             issues = []
-            
-            if not result["basic"]["username"]:
-                issues.append("لا يوجد يوزر عام")
-                risk += 20
-            
-            if result["basic"]["phone_visible"]:
-                issues.append("رقم الهاتف مكشوف للجميع")
-                risk += 40
-            
-            if result["basic"]["scam"]:
-                issues.append("مُبلغ عنه كحساب احتيال")
-                risk += 80
-            
-            if result["basic"]["fake"]:
-                issues.append("مُبلغ عنه كحساب مزيف")
-                risk += 60
-            
-            if result["activity"].get("age_days", 999) < 30:
-                issues.append("حساب جديد جداً (أقل من شهر)")
-                risk += 25
-            
-            result["security"]["issues"] = issues
-            result["security"]["issue_count"] = len(issues)
-            result["risk_score"] = min(risk, 100)
-            
-            # جلب معلومات إضافية
+            if not r["basic"]["username"] or r["basic"]["username"] == "لا يوجد":
+                issues.append("❌ لا يوزر عام")
+                risk += 15
+            if r["basic"]["phone_vis"]:
+                issues.append("⚠️ رقم الهاتف مكشوف")
+                risk += 45
+            if getattr(entity, 'scam', False):
+                issues.append("🚫 حساب احتيال رسمي")
+                risk += 85
+            if getattr(entity, 'fake', False):
+                issues.append("⚠️ حساب مزيف")
+                risk += 65
+            if r["activity"].get("age", "").startswith("0 يوم") or (cd and days < 30):
+                issues.append("🆕 حساب جديد (< 30 يوم)")
+                risk += 30
+            r["security"] = issues
+            r["risk"] = min(risk, 100)
+            r["risk_level"] = "🟢" if risk < 25 else "🟡" if risk < 50 else "🟠" if risk < 75 else "🔴"
             try:
-                full_user = await bot(GetFullUserRequest(entity))
-                result["activity"]["bio"] = getattr(full_user.full_user, 'about', '')[:500]
-                result["activity"]["common_chats"] = getattr(full_user.full_user, 'common_chats_count', 0)
-            except:
-                pass
-            
-            # فحص الويب
-            if result["basic"]["username"]:
-                async with aiohttp.ClientSession() as session:
-                    headers = {'User-Agent': ua.random}
-                    url = f"https://t.me/{result['basic']['username']}"
+                fu = await bot(GetFullUserRequest(entity))
+                r["activity"]["bio"] = getattr(fu.full_user, 'about', '')[:500] or "لا يوجد"
+            except: pass
+            if r["basic"]["username"] and r["basic"]["username"] != "لا يوجد":
+                async with aiohttp.ClientSession() as s:
                     try:
-                        async with session.get(url, headers=headers, timeout=10) as resp:
-                            text = await resp.text()
-                            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-                            if emails:
-                                result["exposed"]["emails"] = list(set(emails))[:10]
-                            
-                            phones = re.findall(r'\+?[\d]{8,15}', text)
-                            if phones:
-                                result["exposed"]["phones"] = list(set(phones))[:10]
-                    except:
-                        pass
-            
+                        async with s.get(f"https://t.me/{r['basic']['username']}", headers={'User-Agent': ua.random}, timeout=10) as resp:
+                            t = await resp.text()
+                            ems = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', t)))
+                            if ems: r["exposed"]["emails"] = ems[:10]
+                            phs = list(set(re.findall(r'\+?[\d]{8,15}', t)))
+                            if phs: r["exposed"]["phones"] = phs[:10]
+                    except: pass
         except Exception as e:
-            result["error"] = str(e)
-        
-        return result
-    
+            r["error"] = str(e)[:200]
+        return r
+
     @staticmethod
-    def _estimate_date(user_id: int) -> Optional[datetime]:
-        """تقدير تاريخ إنشاء الحساب من ID"""
-        if user_id < 1000000:
-            return datetime(2013, 8, 14)
-        elif user_id < 1000000000:
-            return datetime(2016, 3, 15)
-        elif user_id < 3000000000:
-            return datetime(2018, 6, 20)
-        elif user_id < 5000000000:
-            return datetime(2020, 1, 10)
-        elif user_id < 6000000000:
-            return datetime(2021, 6, 15)
-        elif user_id < 7000000000:
-            return datetime(2022, 8, 20)
-        elif user_id < 8000000000:
-            return datetime(2023, 6, 1)
-        else:
-            return datetime(2024, 3, 1)
+    def _est(uid):
+        if uid < 1000000: return datetime(2013, 8, 14)
+        elif uid < 1000000000: return datetime(2016, 3, 15)
+        elif uid < 3000000000: return datetime(2018, 6, 20)
+        elif uid < 5000000000: return datetime(2020, 1, 10)
+        elif uid < 6000000000: return datetime(2021, 6, 15)
+        elif uid < 7000000000: return datetime(2022, 8, 20)
+        elif uid < 8000000000: return datetime(2023, 6, 1)
+        else: return datetime(2024, 3, 1)
 
-# ==================== نظام تجميع الجروبات ====================
+# ============================================================
+class PhoneRevealer:
+    COUNTRIES = {
+        "20": ("مصر", ["10", "11", "12", "15"]),
+        "966": ("السعودية", ["50", "53", "54", "55", "56", "57", "58", "59"]),
+        "971": ("الإمارات", ["50", "52", "54", "55", "56", "58"]),
+        "965": ("الكويت", ["50", "55", "60", "65", "66", "67", "69"]),
+    }
+
+    @classmethod
+    async def reveal(cls, username, cc="20"):
+        r = {"username": username, "found": False, "phone": None, "tries": 0, "time": 0}
+        info = cls.COUNTRIES.get(cc, ("?", ["10"]))
+        prefixes = info[1]
+        start = time.time()
+        try:
+            entity = await bot.get_entity(username.replace("@", ""))
+            tid = entity.id
+            nums = []
+            for pfx in prefixes[:3]:
+                for i in range(0, 3000, 150):
+                    nums.append(f"+{cc}{pfx}{i:05d}")
+            for i in range(0, len(nums), 40):
+                batch = nums[i:i+40]
+                try:
+                    contacts = [InputPhoneContact(client_id=random.randint(100000, 999999), phone=n, first_name=f"S{random.randint(1,9999)}", last_name="") for n in batch]
+                    imp = await bot(ImportContactsRequest(contacts))
+                    if imp and imp.users:
+                        for u in imp.users:
+                            if u.id == tid:
+                                for c, n in zip(contacts, batch):
+                                    if hasattr(u, 'phone') and u.phone:
+                                        r["found"] = True
+                                        r["phone"] = n
+                                        r["tries"] = i + len(batch)
+                                        r["time"] = round(time.time() - start, 1)
+                                        try: await bot(DeleteContactsRequest([u]))
+                                        except: pass
+                                        return r
+                    if imp and imp.users:
+                        try: await bot(DeleteContactsRequest(imp.users))
+                        except: pass
+                    r["tries"] = i + len(batch)
+                    await asyncio.sleep(2)
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
+                except: continue
+        except Exception as e:
+            r["error"] = str(e)[:200]
+        r["time"] = round(time.time() - start, 1)
+        return r
+
+    @classmethod
+    async def check(cls, phone):
+        r = {"phone": phone, "registered": False, "user": None}
+        try:
+            c = InputPhoneContact(client_id=random.randint(100000, 999999), phone=phone, first_name="Chk", last_name="")
+            imp = await bot(ImportContactsRequest([c]))
+            if imp and imp.users:
+                u = imp.users[0]
+                r["registered"] = True
+                r["user"] = {"id": u.id, "username": getattr(u, 'username', None), "name": f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip()}
+                try: await bot(DeleteContactsRequest([u]))
+                except: pass
+        except: pass
+        return r
+
+# ============================================================
 class GroupScraper:
-    """نظام تجميع الجروبات بالعربي"""
-    
     @classmethod
-    async def search_groups(cls, keyword: str, limit: int = 50) -> List[Dict]:
-        """البحث عن جروبات بالكلمة المفتاحية"""
-        results = []
-        
+    async def search(cls, kw, limit=25):
+        res = []
         try:
-            # البحث في تيليجرام مباشرة
-            search_result = await bot(SearchRequest(
-                q=keyword,
-                filter=types.InputMessagesFilterEmpty(),
-                min_date=None,
-                max_date=None,
-                offset_id=0,
-                add_offset=0,
-                limit=limit,
-                max_id=0,
-                min_id=0,
-                hash=0
-            ))
-            
-            # معالجة النتائج
-            if hasattr(search_result, 'chats'):
-                for chat in search_result.chats:
-                    if hasattr(chat, 'username') and chat.username:
-                        info = {
-                            "id": chat.id,
-                            "username": chat.username,
-                            "title": getattr(chat, 'title', ''),
-                            "members": getattr(chat, 'participants_count', 0),
-                            "type": "قناة" if getattr(chat, 'broadcast', False) else "جروب",
-                            "link": f"https://t.me/{chat.username}",
-                            "verified": getattr(chat, 'verified', False),
-                        }
-                        results.append(info)
-        
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-        
-        # البحث الإضافي عبر الويب
-        try:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': ua.random}
-                
-                # tgstat search
-                url = f"https://tgstat.com/search?q={quote(keyword)}"
+            sr = await bot(SearchRequest(q=kw, filter=types.InputMessagesFilterEmpty(), min_date=None, max_date=None, offset_id=0, add_offset=0, limit=limit, max_id=0, min_id=0, hash=0))
+            if hasattr(sr, 'chats'):
+                for c in sr.chats:
+                    if hasattr(c, 'username') and c.username:
+                        res.append({"id": c.id, "username": c.username, "title": getattr(c, 'title', ''), "members": getattr(c, 'participants_count', 0), "type": "قناة" if getattr(c, 'broadcast', False) else "جروب", "link": f"https://t.me/{c.username}"})
+        except: pass
+        async with aiohttp.ClientSession() as s:
+            for url in [f"https://tgstat.com/search?q={quote(kw)}", f"https://combot.org/telegram/top/chats?q={quote(kw)}"]:
                 try:
-                    async with session.get(url, headers=headers, timeout=15) as resp:
-                        text = await resp.text()
-                        usernames = re.findall(r'@([a-zA-Z][a-zA-Z0-9_]{3,31})', text)
-                        for username in usernames[:20]:
-                            if not any(r['username'] == username for r in results):
-                                results.append({
-                                    "username": username,
-                                    "link": f"https://t.me/{username}",
-                                    "source": "web"
-                                })
-                except:
-                    pass
-                
-                # combot search
-                url = f"https://combot.org/telegram/top/chats?q={quote(keyword)}"
-                try:
-                    async with session.get(url, headers=headers, timeout=15) as resp:
-                        text = await resp.text()
-                        usernames = re.findall(r'@([a-zA-Z][a-zA-Z0-9_]{3,31})', text)
-                        for username in usernames[:20]:
-                            if not any(r['username'] == username for r in results):
-                                results.append({
-                                    "username": username,
-                                    "link": f"https://t.me/{username}",
-                                    "source": "web"
-                                })
-                except:
-                    pass
-        
-        except Exception as e:
-            logger.error(f"Web search error: {e}")
-        
-        return results[:limit]
+                    async with s.get(url, headers={'User-Agent': ua.random}, timeout=15) as resp:
+                        for un in set(re.findall(r'@([a-zA-Z][a-zA-Z0-9_]{3,31})', await resp.text())):
+                            if not any(x.get('username') == un for x in res):
+                                res.append({"username": un, "link": f"https://t.me/{un}", "source": "web"})
+                except: pass
+        return res[:limit]
 
-# ==================== نظام فك الحظر ====================
-class UnbanSystem:
-    """نظام فك الحظر من تيليجرام وواتساب"""
-    
-    TELEGRAM_RECOVERY = {
-        "emails": [
-            "recover@telegram.org",
-            "login@telegram.org", 
-            "sms@telegram.org",
-            "support@telegram.org"
-        ],
-        "forms": [
-            "https://telegram.org/support",
-            "https://t.me/TelegramSupport"
-        ]
-    }
-    
-    WHATSAPP_RECOVERY = {
-        "emails": [
-            "support@whatsapp.com",
-            "android_web@support.whatsapp.com",
-            "iphone_web@support.whatsapp.com"
-        ],
-        "forms": [
-            "https://www.whatsapp.com/contact/",
-            "https://www.whatsapp.com/contact/noclue/"
-        ]
-    }
-    
+# ============================================================
+class Unban:
     @classmethod
-    def generate_telegram_unban(cls, phone: str, username: str = "", 
-                                 ban_reason: str = "unknown") -> str:
-        """توليد رسالة فك حظر تيليجرام"""
-        
-        # صيغ مجربة من مجتمعات المبرمجين والهكر
-        templates = {
-            "unknown": """
-Subject: Account Recovery Request - {phone}
+    def telegram(cls, phone, username=""):
+        return f"""
+Subject: Account Recovery - {phone}
+To: recover@telegram.org, login@telegram.org
 
-Dear Telegram Support Team,
+Dear Telegram Support,
 
-I am writing to respectfully request the review and reinstatement 
-of my Telegram account that has been restricted.
+I request restoration of my account:
+Phone: {phone}
+Username: @{username or 'N/A'}
+Date: {datetime.now().strftime('%Y-%m-%d')}
 
-Account Details:
-- Phone Number: {phone}
-- Username: @{username}
-- Date of Restriction: {date}
+I believe the restriction was an error. I have reviewed and will comply with all Terms of Service. This account is essential for my communications.
 
-I have reviewed Telegram's Terms of Service and believe my account 
-may have been restricted in error. I have always complied with the 
-platform's guidelines and have not engaged in any prohibited activities.
+Please review my case. Thank you.
+        """.strip()
 
-If any violation occurred, it was unintentional and I sincerely apologize. 
-I assure you that I will strictly adhere to all terms moving forward.
+    @classmethod
+    def whatsapp(cls, phone):
+        return f"""
+Subject: WhatsApp Ban Appeal - {phone}
+To: support@whatsapp.com
 
-I kindly request a manual review of my case. My account contains 
-important personal and professional contacts that I need access to.
+Dear WhatsApp Support,
 
-Thank you for your time and consideration.
-
-Best regards,
-[Account Owner]
-            """,
-            "spam": """
-Subject: Appeal for Spam Restriction - {phone}
-
-Dear Telegram Team,
-
-I am contacting you to appeal the restriction placed on my account 
-@{username} for alleged spam activity.
-
-I understand that my account may have triggered the spam detection 
-system. If any of my messages were perceived as spam, I sincerely 
-apologize. It was never my intention to violate platform guidelines.
-
-I have now:
-1. Removed any automated scripts from my device
-2. Reviewed Telegram's anti-spam policy
-3. Committed to manual, organic messaging only
-
-I promise to be a responsible user and will not repeat this behavior.
+I appeal the ban on my account {phone}. I have always followed WhatsApp policies and request a manual review. WhatsApp is essential for my daily communication.
 
 Please restore my account. Thank you.
+        """.strip()
 
-Best,
-[User]
-            """,
-            "bot": """
-Subject: Account Recovery - Bot Activity - {phone}
-
-Dear Support,
-
-My account @{username} was restricted possibly due to bot-like behavior 
-detected on my account.
-
-I use Telegram extensively for work and personal communication, which 
-may have appeared as automated activity. I assure you I am a real user 
-and do not operate any unauthorized bots.
-
-Please review my case and restore access. All my professional contacts 
-and work groups are on this account.
-
-Thank you for understanding.
-
-[Name]
-            """
-        }
-        
-        template = templates.get(ban_reason, templates["unknown"])
-        
-        return template.format(
-            phone=phone,
-            username=username or "N/A",
-            date=datetime.now().strftime("%Y-%m-%d")
-        ).strip()
-    
+# ============================================================
+class Breach:
     @classmethod
-    def generate_whatsapp_unban(cls, phone: str, ban_reason: str = "unknown") -> str:
-        """توليد رسالة فك حظر واتساب"""
-        
-        template = """
-Subject: Request for Account Review - WhatsApp Ban Appeal
-
-Dear WhatsApp Support Team,
-
-I am writing to appeal the ban on my WhatsApp account associated with 
-the phone number: {phone}
-
-I believe my account was banned in error. I have always used WhatsApp 
-in accordance with the Terms of Service and have not engaged in:
-- Spam or bulk messaging
-- Unauthorized automated behavior
-- Distribution of illegal content
-- Harassment of other users
-
-If any automated system flagged my account, I respectfully request 
-a manual review by your team.
-
-WhatsApp is essential for my daily communication with family, friends, 
-and professional contacts. Losing access has significantly impacted 
-my ability to stay connected.
-
-I am committed to following all WhatsApp policies and guidelines.
-
-Account Information:
-- Phone: {phone}
-- Device: [Your Device Model]
-- OS Version: [Your OS Version]
-- WhatsApp Version: Latest
-
-Please restore my account at your earliest convenience.
-
-Thank you,
-[Account Owner]
-        """.format(phone=phone)
-        
-        return template.strip()
-    
-    @classmethod
-    def get_recovery_links(cls, platform: str = "telegram") -> Dict:
-        """الحصول على روابط وإيميلات الاسترداد"""
-        if platform == "telegram":
-            return cls.TELEGRAM_RECOVERY
-        else:
-            return cls.WHATSAPP_RECOVERY
-
-# ==================== نظام فحص التسريبات ====================
-class BreachChecker:
-    """نظام فحص التسريبات الحقيقي"""
-    
-    @classmethod
-    async def check_email(cls, email: str) -> Dict:
-        """فحص إيميل في التسريبات"""
-        result = {"email": email, "breaches": [], "total_breaches": 0}
-        
+    async def check(cls, email):
+        r = {"email": email, "count": 0, "breaches": []}
         try:
-            # HaveIBeenPwned API
-            async with aiohttp.ClientSession() as session:
-                headers = {
-                    'User-Agent': 'NinjaGram-OSINT',
-                    'hibp-api-key': 'your-api-key'  # مجاني
-                }
-                url = f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}"
+            async with aiohttp.ClientSession() as s:
                 try:
-                    async with session.get(url, headers=headers, timeout=15) as resp:
-                        if resp.status == 200:
-                            breaches = await resp.json()
-                            result["breaches"] = breaches
-                            result["total_breaches"] = len(breaches)
-                        elif resp.status == 404:
-                            result["total_breaches"] = 0
-                except:
-                    pass
-                
-                # LeakCheck search
-                try:
-                    leak_url = f"https://leakcheck.io/api/public?key=49535f49545f4a4f4b4552&check={email}"
-                    async with session.get(leak_url, timeout=15) as resp:
+                    async with s.get(f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}", headers={'User-Agent': 'NinjaGram'}, timeout=15) as resp:
                         if resp.status == 200:
                             data = await resp.json()
-                            if data.get("success"):
-                                result["leakcheck_found"] = data.get("found", False)
-                                result["leakcheck_sources"] = data.get("sources", [])
-                except:
-                    pass
-                
-                # Psbdmp search
-                try:
-                    psb_url = f"https://psbdmp.ws/api/v3/search/{email}"
-                    async with session.get(psb_url, timeout=15) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            result["psbdmp_count"] = data.get("count", 0)
-                except:
-                    pass
-                
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
-    
-    @classmethod
-    async def check_phone(cls, phone: str) -> Dict:
-        """فحص رقم هاتف في التسريبات"""
-        result = {"phone": phone, "found": False, "sources": []}
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': ua.random}
-                
-                # بحث في محركات البحث عن الرقم + كلمات التسريبات
-                query = f"{phone} leak breach database"
-                url = f"https://www.google.com/search?q={quote(query)}"
-                try:
-                    async with session.get(url, headers=headers, timeout=15) as resp:
-                        text = await resp.text()
-                        if any(word in text.lower() for word in ['leak', 'breach', 'database', 'exposed']):
-                            result["found"] = True
-                            result["sources"].append("web_mention")
-                except:
-                    pass
-                
-                # فحص في LeakCheck
-                try:
-                    leak_url = f"https://leakcheck.io/api/public?key=49535f49545f4a4f4b4552&check={phone}"
-                    async with session.get(leak_url, timeout=15) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            if data.get("success") and data.get("found"):
-                                result["found"] = True
-                                result["sources"].append("leakcheck")
-                except:
-                    pass
-                
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
+                            r["breaches"] = [{"name": b.get('Name', ''), "date": b.get('BreachDate', '')} for b in data]
+                            r["count"] = len(data)
+                except: pass
+        except: pass
+        return r
 
-# ==================== نظام تحليل الجروبات ====================
-class GroupAnalyzer:
-    """نظام تحليل الجروبات والقنوات"""
-    
+# ============================================================
+class Faker:
     @classmethod
-    async def analyze_chat(cls, chat_username: str) -> Dict:
-        """تحليل جروب أو قناة"""
-        result = {}
-        
-        try:
-            entity = await bot.get_entity(chat_username)
-            full_chat = await bot(GetFullChannelRequest(entity))
-            
-            result["basic"] = {
-                "id": entity.id,
-                "username": getattr(entity, 'username', None),
-                "title": getattr(entity, 'title', ''),
-                "type": "قناة" if getattr(entity, 'broadcast', False) else "جروب",
-                "verified": getattr(entity, 'verified', False),
-                "restricted": getattr(entity, 'restricted', False),
-                "scam": getattr(entity, 'scam', False),
-            }
-            
-            result["stats"] = {
-                "members": getattr(full_chat.full_chat, 'participants_count', 0),
-                "description": getattr(full_chat.full_chat, 'about', '')[:500],
-                "can_view_participants": getattr(full_chat.full_chat, 'can_view_participants', False),
-            }
-            
-            # تحليل إضافي
-            member_count = result["stats"]["members"]
-            if member_count > 100000:
-                result["stats"]["size"] = "ضخم جداً 🌟"
-            elif member_count > 10000:
-                result["stats"]["size"] = "كبير 📊"
-            elif member_count > 1000:
-                result["stats"]["size"] = "متوسط 📈"
-            else:
-                result["stats"]["size"] = "صغير 📉"
-            
-        except Exception as e:
-            result["error"] = str(e)
-        
-        return result
-
-# ==================== نظام مزور الرسائل ====================
-class MessageFaker:
-    """نظام صنع رسائل مزيفة للاختبار"""
-    
-    @classmethod
-    async def create_fake_telegram_message(cls, sender_name: str, message: str,
-                                            sender_photo_url: str = None,
-                                            time_str: str = None) -> BytesIO:
-        """صنع صورة محاكية لرسالة تيليجرام"""
-        
-        width, height = 650, 180
-        img = Image.new('RGB', (width, height), color='#17212B')
-        draw = ImageDraw.Draw(img)
-        
-        # محاولة تحميل صورة المرسل
-        sender_img = None
-        if sender_photo_url:
-            try:
-                resp = requests.get(sender_photo_url, timeout=10)
-                sender_img = Image.open(BytesIO(resp.content)).resize((40, 40))
-                sender_img = sender_img.convert('RGB')
-                # جعل الصورة دائرية
-                mask = Image.new('L', (40, 40), 0)
-                ImageDraw.Draw(mask).ellipse((0, 0, 40, 40), fill=255)
-                sender_img.putalpha(mask)
-                img.paste(sender_img, (15, 15), sender_img)
-            except:
-                pass
-        
-        # كتابة اسم المرسل
-        draw.text((65, 18), sender_name, fill='#2B9FD9')
-        
-        # كتابة الوقت
-        time_text = time_str or datetime.now().strftime("%I:%M %p")
-        draw.text((width - 80, 18), time_text, fill='#6C7883')
-        
-        # خط فاصل
-        draw.line([(65, 45), (width - 15, 45)], fill='#1F2C38', width=1)
-        
-        # كتابة الرسالة
-        y = 55
-        for line in textwrap.wrap(message[:300], width=50):
-            draw.text((65, y), line, fill='#FFFFFF')
+    async def telegram(cls, name, msg):
+        img = Image.new('RGB', (650, 180), color='#17212B')
+        d = ImageDraw.Draw(img)
+        d.text((15, 15), name, fill='#2B9FD9')
+        d.text((520, 15), datetime.now().strftime("%I:%M %p"), fill='#6C7883')
+        d.line([(15, 40), (635, 40)], fill='#1F2C38', width=1)
+        y = 50
+        for ln in textwrap.wrap(msg, width=50):
+            d.text((15, y), ln, fill='#FFFFFF')
             y += 22
-        
-        # تذييل
-        draw.text((15, height - 25), "⚠️ رسالة توضيحية للأغراض التعليمية", fill='#FF4444')
-        
-        output = BytesIO()
-        img.save(output, format='PNG')
-        output.seek(0)
-        output.name = "fake_message.png"
-        
-        return output
-    
+        d.text((15, 155), "⚠️ تعليمي فقط - NinjaGram", fill='#FF4444')
+        o = BytesIO()
+        img.save(o, format='PNG')
+        o.seek(0); o.name = "fake_tg.png"
+        return o
+
     @classmethod
-    async def create_fake_whatsapp_message(cls, sender_name: str, message: str) -> BytesIO:
-        """صنع صورة محاكية لرسالة واتساب"""
-        
-        width, height = 600, 150
-        img = Image.new('RGB', (width, height), color='#075E54')
-        draw = ImageDraw.Draw(img)
-        
-        # شريط علوي
-        draw.rectangle([(0, 0), (width, 40)], fill='#075E54')
-        draw.text((20, 10), sender_name, fill='#FFFFFF')
-        
-        # جسم الرسالة
-        draw.rectangle([(10, 45), (width-10, height-30)], fill='#DCF8C6')
-        draw.text((20, 55), message[:200], fill='#000000')
-        
-        # تذييل
-        draw.text((15, height-25), "⚠️ للأغراض التعليمية فقط", fill='#FF4444')
-        
-        output = BytesIO()
-        img.save(output, format='PNG')
-        output.seek(0)
-        output.name = "fake_whatsapp.png"
-        
-        return output
+    async def whatsapp(cls, name, msg):
+        img = Image.new('RGB', (600, 150), color='#075E54')
+        d = ImageDraw.Draw(img)
+        d.rectangle([(0, 0), (600, 40)], fill='#075E54')
+        d.text((15, 10), name, fill='#FFFFFF')
+        d.rectangle([(10, 45), (590, 125)], fill='#DCF8C6')
+        y = 52
+        for ln in textwrap.wrap(msg, width=45):
+            d.text((18, y), ln, fill='#000000')
+            y += 22
+        d.text((15, 130), "⚠️ تعليمي", fill='#FF4444')
+        o = BytesIO()
+        img.save(o, format='PNG')
+        o.seek(0); o.name = "fake_wa.png"
+        return o
 
-# ==================== واجهة المستخدم ====================
-class UIManager:
+# ============================================================
+class UI:
     @staticmethod
-    def main_menu():
+    def main():
         return [
-            [Button.inline("📞 تروكولر", b"truecaller"),
-             Button.inline("🔫 بلاغات", b"reports")],
-            [Button.inline("🕵️ OSINT", b"osint"),
-             Button.inline("📞 كشف رقم", b"reveal_phone")],
-            [Button.inline("🔍 جروبات", b"scrape_groups"),
-             Button.inline("🔓 فك حظر", b"unban")],
-            [Button.inline("🧬 تسريبات", b"breaches"),
-             Button.inline("💣 صيد", b"hunt")],
-            [Button.inline("📊 تحليل جروب", b"analyze_group"),
-             Button.inline("📝 مزور رسائل", b"faker")],
-            [Button.inline("📱 واتساب", b"whatsapp"),
-             Button.inline("ℹ️ معلومات", b"info")],
+            [Button.inline("📞 تروكولر", b"tc"), Button.inline("🔫 بلاغات", b"rpt")],
+            [Button.inline("🕵️ OSINT", b"osint"), Button.inline("📞 كشف رقم", b"reveal")],
+            [Button.inline("🔍 جروبات", b"scrape"), Button.inline("🔓 فك حظر", b"unban")],
+            [Button.inline("🧬 تسريبات", b"breach"), Button.inline("💣 صيد", b"hunt")],
+            [Button.inline("📊 تحليل", b"analyze"), Button.inline("📝 مزور", b"faker")],
+            [Button.inline("📱 واتساب", b"wa"), Button.inline("📞 فحص", b"checkreg")],
+            [Button.inline("🔄 تحويل", b"convert"), Button.inline("ℹ️ معلومات", b"info")],
         ]
-    
+
     @staticmethod
-    def report_menu():
-        types_list = list(ReportSystem.REPORT_TYPES.keys())
-        buttons = []
+    def reports():
+        btns = []
         row = []
-        for i, rtype in enumerate(types_list[:15]):
-            name = ReportSystem.REPORT_TYPES[rtype]["name"]
-            row.append(Button.inline(name[:20], f"report_{rtype}".encode()))
+        for k, v in Reporter.TYPES.items():
+            row.append(Button.inline(v[0], f"rpt_{k}".encode()))
             if len(row) == 2:
-                buttons.append(row)
+                btns.append(row)
                 row = []
-        if row:
-            buttons.append(row)
-        buttons.append([Button.inline("🔙 رجوع", b"main_menu")])
-        return buttons
+        if row: btns.append(row)
+        btns.append([Button.inline("🔙 رجوع", b"main")])
+        return btns
 
-# ==================== معالج البداية ====================
+# ============================================================
 @bot.on(events.NewMessage(pattern='/start'))
-async def start_handler(event):
-    try:
-        user_id = event.sender_id
-        allowed_chats.add(event.chat_id)
-        
-        caption = """
-🧨 **NinjaGram Pro Max Ultra v9.0**
-أقوى بوت أدوات تيليجرام وواتساب
+async def start(event):
+    allowed_chats.add(event.chat_id)
+    await event.respond("""🧨 **NinjaGram Pro Max Ultra v10**
 
-⚡ **الخدمات:**
-• 📞 تروكولر - بحث عن أرقام
-• 🔫 بلاغات شاملة (15 نوع)
-• 🕵️ OSINT - معلومات كاملة
-• 📞 كشف رقم الهاتف (Russian Method)
-• 🔍 تجميع جروبات بالعربي
-• 🔓 فك حظر تيليجرام وواتساب
-• 🧬 فحص تسريبات حقيقي
-• 💣 صيد يوزرات
-• 📊 تحليل جروبات
-• 📝 مزور رسائل
-• 📱 أدوات واتساب
+🔞 أقوى بوت أدوات تيليجرام وواتساب
 
-⚠️ للأغراض التعليمية والأمنية فقط
-👨‍💻 @NinjaGram | 📢 @Q_g_r_a_m
-        """
-        
-        start_img = "start.jpg"
-        if os.path.exists(start_img):
-            await bot.send_file(event.chat_id, start_img, 
-                              caption=caption, buttons=UIManager.main_menu(), 
-                              parse_mode='md')
-        else:
-            await event.respond(caption, buttons=UIManager.main_menu(), 
-                              parse_mode='md')
-        
-        logger.info(f"User {user_id} started bot")
-        
-    except Exception as e:
-        logger.error(f"Start error: {e}")
-        await event.respond("✅ البوت يعمل!", buttons=UIManager.main_menu())
+⚡ 20 خدمة فتاكة:
+📞 تروكولر | 🔫 15 بلاغ | 🕵️ OSINT
+📞 كشف رقم | 🔍 جروبات | 🔓 فك حظر
+🧬 تسريبات | 💣 صيد | 📝 مزور
+📊 تحليل | 📱 واتساب | 🔄 تحويل
 
-# ==================== معالجات الأزرار ====================
-@bot.on(events.CallbackQuery(data=b"main_menu"))
-async def back_main(event):
-    await event.edit("🧨 **القائمة الرئيسية**", 
-                    buttons=UIManager.main_menu(), parse_mode='md')
+⚠️ تعليمي وأمني فقط
+👨‍💻 @NinjaGram | 📢 @Q_g_r_a_m""", buttons=UI.main(), parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"truecaller"))
-async def truecaller_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "truecaller"
-    await event.edit(
-        "📞 **نظام تروكولر**\n\n"
-        "📤 أرسل رقم الهاتف أو الاسم للبحث:\n"
-        "مثال: +201234567890\n"
-        "أو: محمد أحمد",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"main"))
+async def back(event):
+    await event.edit("🧨 **القائمة الرئيسية**", buttons=UI.main(), parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"reports"))
-async def reports_menu(event):
-    await event.edit(
-        "🔫 **نظام البلاغات الشامل**\n\n"
-        "اختر نوع البلاغ:",
-        buttons=UIManager.report_menu(),
-        parse_mode='md'
-    )
+# ============================================================
+@bot.on(events.CallbackQuery(data=b"tc"))
+async def tc(event):
+    user_states[event.sender_id] = "tc"
+    await event.edit("📞 **تروكولر**\n\nأرسل رقم أو اسم:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=re.compile(rb"report_(.+)")))
-async def report_type_handler(event):
-    report_type = event.data.decode().replace("report_", "")
-    user_id = event.sender_id
-    
-    pending_data[user_id] = {"report_type": report_type}
-    user_states[user_id] = "report_target"
-    
-    report_info = ReportSystem.REPORT_TYPES.get(report_type, {})
-    
-    await event.edit(
-        f"🔫 **بلاغ {report_info.get('name', report_type)}**\n\n"
-        "📤 أرسل اليوزر أو رقم الهاتف:\n"
-        "تيليجرام: @username\n"
-        "واتساب: +201234567890\n\n"
-        "اختر نوع المنصة أولاً:",
-        buttons=[
-            [Button.inline("📱 تيليجرام", f"rplat_telegram_{report_type}".encode()),
-             Button.inline("💬 واتساب", f"rplat_whatsapp_{report_type}".encode())],
-            [Button.inline("🔙 رجوع", b"reports")],
-        ],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"rpt"))
+async def rpt(event):
+    await event.edit("🔫 **بلاغات (15 نوع)**\n\nاختر:", buttons=UI.reports(), parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=re.compile(rb"rplat_(.+)_(.+)")))
-async def report_platform_handler(event):
-    parts = event.data.decode().split("_")
-    platform = parts[1]
-    report_type = "_".join(parts[2:])
-    user_id = event.sender_id
-    
-    pending_data[user_id] = {
-        "report_type": report_type,
-        "platform": platform
-    }
-    user_states[user_id] = "report_target_final"
-    
-    platform_name = "تيليجرام" if platform == "telegram" else "واتساب"
-    
-    await event.edit(
-        f"🔫 **بلاغ {platform_name}**\n\n"
-        f"📤 أرسل {'اليوزر @username' if platform == 'telegram' else 'رقم الهاتف +20xxxxxxxxx'}",
-        buttons=[[Button.inline("🔙 رجوع", b"reports")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=re.compile(rb"rpt_(.+)")))
+async def rpt_type(event):
+    rt = event.data.decode().replace("rpt_", "")
+    pending_data[event.sender_id] = {"rt": rt}
+    user_states[event.sender_id] = "rpt_plat"
+    await event.edit(f"🔫 **{Reporter.TYPES.get(rt,['?'])[0]}**\n\nاختر:", buttons=[
+        [Button.inline("📱 تيليجرام", f"rp_tg_{rt}".encode()), Button.inline("💬 واتساب", f"rp_wa_{rt}".encode())],
+        [Button.inline("🔙", b"rpt")]
+    ], parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=re.compile(rb"rp_(.+)_(.+)")))
+async def rpt_plat(event):
+    p, rt = event.data.decode().split("_")[1], "_".join(event.data.decode().split("_")[2:])
+    pending_data[event.sender_id].update({"rt": rt, "p": p})
+    user_states[event.sender_id] = "rpt_tgt"
+    await event.edit(f"🔫 **{'تيليجرام' if p=='tg' else 'واتساب'}**\n\nأرسل {'@' if p=='tg' else '+'} الهدف:", buttons=[[Button.inline("🔙", b"rpt")]], parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"osint"))
-async def osint_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "osint"
-    await event.edit(
-        "🕵️ **نظام OSINT المتقدم**\n\n"
-        "📤 أرسل اليوزر أو ID الحساب:\n"
-        "مثال: @username أو 6443238809",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+async def osint(event):
+    user_states[event.sender_id] = "osint"
+    await event.edit("🕵️ **OSINT**\n\nأرسل يوزر أو ID:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"reveal_phone"))
-async def reveal_phone_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "reveal_phone"
-    await event.edit(
-        "📞 **كشف رقم الهاتف (Russian Method)**\n\n"
-        "📤 أرسل يوزر الحساب:\n"
-        "مثال: @username\n\n"
-        "⚠️ قد تستغرق العملية عدة دقائق\n"
-        "🔍 نبحث في الأرقام المصرية افتراضياً",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"reveal"))
+async def reveal(event):
+    await event.edit("📞 **كشف رقم**\n\nاختر الدولة:", buttons=[
+        [Button.inline("🇪🇬 مصر", b"rv_20"), Button.inline("🇸🇦 السعودية", b"rv_966")],
+        [Button.inline("🇦🇪 الإمارات", b"rv_971"), Button.inline("🇰🇼 الكويت", b"rv_965")],
+        [Button.inline("🔙", b"main")]
+    ], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"scrape_groups"))
-async def scrape_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "scrape_groups"
-    await event.edit(
-        "🔍 **تجميع الجروبات بالعربي**\n\n"
-        "📤 أرسل الكلمة المفتاحية:\n"
-        "مثال: تعارف، برمجة، تسويق",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=re.compile(rb"rv_(.+)")))
+async def rv_cc(event):
+    pending_data[event.sender_id] = {"cc": event.data.decode().replace("rv_", "")}
+    user_states[event.sender_id] = "rv_tgt"
+    await event.edit("📞 **كشف الرقم**\n\nأرسل يوزر الهدف:", buttons=[[Button.inline("🔙", b"reveal")]], parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=b"scrape"))
+async def scrape(event):
+    user_states[event.sender_id] = "scrape"
+    await event.edit("🔍 **بحث جروبات**\n\nأرسل الكلمة:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"unban"))
-async def unban_start(event):
-    await event.edit(
-        "🔓 **نظام فك الحظر**\n\n"
-        "اختر المنصة:",
-        buttons=[
-            [Button.inline("📱 تيليجرام", b"unban_telegram"),
-             Button.inline("💬 واتساب", b"unban_whatsapp")],
-            [Button.inline("🔙 رجوع", b"main_menu")],
-        ],
-        parse_mode='md'
-    )
+async def unban(event):
+    await event.edit("🔓 **فك حظر**\n\nاختر:", buttons=[
+        [Button.inline("📱 تيليجرام", b"ub_tg"), Button.inline("💬 واتساب", b"ub_wa")],
+        [Button.inline("🔙", b"main")]
+    ], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"breaches"))
-async def breach_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "breach"
-    await event.edit(
-        "🧬 **فحص التسريبات**\n\n"
-        "📤 أرسل الإيميل أو رقم الهاتف:\n"
-        "مثال: example@email.com\n"
-        "أو: +201234567890",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"ub_tg"))
+async def ub_tg(event):
+    user_states[event.sender_id] = "ub_tg"
+    await event.edit("🔓 **فك حظر تيليجرام**\n\nأرسل الرقم:", buttons=[[Button.inline("🔙", b"unban")]], parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=b"ub_wa"))
+async def ub_wa(event):
+    user_states[event.sender_id] = "ub_wa"
+    await event.edit("🔓 **فك حظر واتساب**\n\nأرسل الرقم:", buttons=[[Button.inline("🔙", b"unban")]], parse_mode='md')
+
+@bot.on(events.CallbackQuery(data=b"breach"))
+async def breach(event):
+    user_states[event.sender_id] = "breach"
+    await event.edit("🧬 **تسريبات**\n\nأرسل إيميل:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"hunt"))
-async def hunt_start(event):
-    await event.edit(
-        "💣 **صيد اليوزرات**\n\n"
-        "جاري الصيد...",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
-    
-    # صيد سريع
+async def hunt(event):
+    if not Security.rate(event.sender_id, "hunt", 3):
+        await event.answer("⏳ انتظر", alert=True)
+        return
+    await event.edit("💣 **صيد...**", parse_mode='md')
     pool = set()
-    letters = "abcdefghijklmnopqrstuvwxyz"
+    c = "abcdefghijklmnopqrstuvwxyz"
+    l = ["111","222","333","444","555","666","777","888","999","69","007"]
     for _ in range(200):
-        c1, c2 = random.choice(letters), random.choice(letters)
-        pool.update([f"{c1}{c2}{random.randint(10,999)}", 
-                    f"{c1}{random.choice('aeiou')}{c2}"])
-    
+        a,b = random.choice(c), random.choice(c)
+        pool.update([f"{a}{b}{random.choice(l)}", f"{a}{random.choice('aeiou')}{b}"])
+    pool = {u for u in pool if 3<=len(u)<=12}
     found = []
-    async with aiohttp.ClientSession() as session:
-        for u in list(pool)[:100]:
-            try:
-                async with session.get(f"https://t.me/{u}", timeout=5) as resp:
-                    if resp.status == 404:
-                        found.append(u)
-            except:
-                pass
-    
-    text = f"✅ تم العثور على {len(found)} يوزر\n\n" + "\n".join([f"@{u}" for u in found[:30]])
-    await event.edit(text, buttons=[[Button.inline("🔄 صيد مرة أخرى", b"hunt"),
-                                      Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-# ==================== معالج الرسائل ====================
-@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and not e.text.startswith('/')))
-async def handle_input(event):
-    user_id = event.sender_id
-    state = user_states.get(user_id)
-    user_input = event.text.strip()
-    
-    if not state:
-        return
-    
-    try:
-        if state == "truecaller":
-            await handle_truecaller(event, user_id, user_input)
-        
-        elif state == "report_target_final":
-            await handle_report_final(event, user_id, user_input)
-        
-        elif state == "osint":
-            await handle_osint(event, user_id, user_input)
-        
-        elif state == "reveal_phone":
-            await handle_reveal_phone(event, user_id, user_input)
-        
-        elif state == "scrape_groups":
-            await handle_scrape(event, user_id, user_input)
-        
-        elif state == "breach":
-            await handle_breach(event, user_id, user_input)
-        
-        elif state == "unban_telegram":
-            await handle_unban(event, user_id, user_input, "telegram")
-        
-        elif state == "unban_whatsapp":
-            await handle_unban(event, user_id, user_input, "whatsapp")
-        
-        elif state == "analyze_group":
-            await handle_analyze_group(event, user_id, user_input)
-        
-        elif state == "faker_telegram":
-            await handle_faker(event, user_id, user_input, "telegram")
-        
-        elif state == "faker_whatsapp":
-            await handle_faker(event, user_id, user_input, "whatsapp")
-        
-    except Exception as e:
-        logger.error(f"Handler error: {e}")
-        await event.respond(f"❌ خطأ: {str(e)[:100]}", 
-                          buttons=[[Button.inline("🔙 رجوع", b"main_menu")]])
-    finally:
-        user_states.pop(user_id, None)
-
-async def handle_truecaller(event, user_id, query):
-    loading = await event.respond("📞 **جاري البحث...**", parse_mode='md')
-    
-    if query.startswith('+') or query[0].isdigit():
-        result = await TruecallerSystem.lookup_phone(query)
-        
-        text = f"📞 **نتيجة البحث عن: {query}**\n\n"
-        text += f"✅ صالح: {'نعم' if result.get('valid') else 'لا'}\n"
-        text += f"📡 الناقل: {result.get('carrier', 'غير معروف')}\n"
-        text += f"🌍 البلد: {result.get('country', 'غير معروف')}\n"
-        text += f"📍 الموقع: {result.get('location', 'غير معروف')}\n"
-        text += f"⚠️ تقارير سبام: {result.get('spam_reports', 0)}\n"
-        text += f"🎯 الخطورة: {result.get('risk_score', 0)}/100\n"
-        text += f"📊 التصنيف: {result.get('risk_level', 'غير معروف')}\n"
-        
-        if result.get('social_media'):
-            text += f"\n📱 منصات: {', '.join(result['social_media'][:5])}"
+    async with aiohttp.ClientSession() as s:
+        sem = asyncio.Semaphore(30)
+        async def chk(u):
+            async with sem:
+                try:
+                    async with s.get(f"https://t.me/{u}", headers={'User-Agent': ua.random}, timeout=5) as r:
+                        if r.status == 404: found.append(u)
+                except: pass
+        await asyncio.gather(*[chk(u) for u in list(pool)[:80]])
+    if found:
+        txt = f"💣 **{len(found)} يوزر**\n\n" + "\n".join([f"• @{u}" for u in found[:20]])
     else:
-        results = await TruecallerSystem.reverse_lookup(query)
-        text = f"🔍 **بحث عن: {query}**\n\n"
-        if results:
-            text += f"✅ تم العثور على {len(results)} نتيجة\n\n"
-            for r in results[:10]:
-                text += f"📞 {r['phone']} - {r['source']}\n"
-        else:
-            text += "❌ لم يتم العثور على نتائج"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
+        txt = "❌ لا نتائج"
+    await event.edit(txt, buttons=[[Button.inline("🔄 صيد", b"hunt"), Button.inline("🔙", b"main")]], parse_mode='md')
 
-async def handle_report_final(event, user_id, target):
-    data = pending_data.get(user_id, {})
-    report_type = data.get("report_type", "spam")
-    platform = data.get("platform", "telegram")
-    
-    loading = await event.respond("🔫 **جاري إعداد البلاغ...**", parse_mode='md')
-    
-    report = ReportSystem.generate_report(report_type, target, platform)
-    
-    text = f"🔫 **بلاغ {report['report_type']}**\n\n"
-    text += f"📋 ID: `{report['report_id']}`\n"
-    text += f"⚠️ الخطورة: {report['severity'].upper()}\n\n"
-    text += "📧 **إيميلات الإرسال:**\n"
-    text += f"• {report['telegram_email']}\n"
-    text += f"• {report['whatsapp_email']}\n\n"
-    text += "📝 **نص البلاغ جاهز للنسخ**\n"
-    text += "تم إعداد البلاغ الاحترافي ✅\n\n"
-    text += "💡 انسخ النص وأرسله للإيميل المناسب"
-    
-    # حفظ البلاغ في pending_data للعرض
-    pending_data[user_id]["full_report"] = report
-    
-    buttons = [
-        [Button.inline("📋 عرض البلاغ", b"view_report"),
-         Button.inline("📧 الإيميلات", b"view_emails")],
-        [Button.inline("🔙 رجوع", b"reports")],
-    ]
-    
-    await loading.edit(text, buttons=buttons, parse_mode='md')
-
-async def handle_osint(event, user_id, target):
-    loading = await event.respond("🕵️ **جاري جمع المعلومات...**", parse_mode='md')
-    
-    result = await AdvancedOSINT.get_full_info(target)
-    
-    if "error" in result:
-        await loading.edit(f"❌ {result['error']}", 
-                         buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], 
-                         parse_mode='md')
-        return
-    
-    basic = result.get("basic", {})
-    security = result.get("security", {})
-    activity = result.get("activity", {})
-    exposed = result.get("exposed", {})
-    
-    text = "🕵️ **تقرير OSINT المتقدم**\n\n"
-    text += "📋 **معلومات أساسية:**\n"
-    text += f"• ID: `{basic.get('id')}`\n"
-    text += f"• يوزر: @{basic.get('username', 'لا يوجد')}\n"
-    text += f"• الاسم: {basic.get('first_name', '')} {basic.get('last_name', '')}\n"
-    text += f"• هاتف: {basic.get('phone', 'مخفي')}\n"
-    text += f"• موثق: {'✅' if basic.get('verified') else '❌'}\n"
-    text += f"• بريميوم: {'⭐' if basic.get('premium') else '❌'}\n"
-    text += f"• احتيال: {'⚠️' if basic.get('scam') else '✅'}\n\n"
-    
-    if activity.get("creation_date"):
-        text += f"📅 الإنشاء: {activity['creation_date']}\n"
-        text += f"⏳ العمر: {activity.get('age_days')} يوم\n\n"
-    
-    if security.get("issues"):
-        text += "⚠️ **مشاكل أمان:**\n"
-        for issue in security["issues"]:
-            text += f"• {issue}\n"
-        text += "\n"
-    
-    text += f"🎯 الخطورة: {result.get('risk_score')}/100\n\n"
-    
-    if exposed.get("emails"):
-        text += "📧 **إيميلات مكشوفة:**\n"
-        for e in exposed["emails"][:5]:
-            text += f"• `{e}`\n"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-async def handle_reveal_phone(event, user_id, username):
-    username = username.replace("@", "")
-    
-    if not SecuritySystem.validate_username(username):
-        await event.respond("❌ يوزر غير صالح", 
-                          buttons=[[Button.inline("🔙 رجوع", b"main_menu")]])
-        return
-    
-    loading = await event.respond(
-        "📞 **جاري البحث عن رقم الهاتف...**\n"
-        "🔍 هذه العملية قد تستغرق عدة دقائق\n"
-        "⚡ نستخدم الطريقة الروسية المتقدمة\n\n"
-        "⏳ يرجى الانتظار...",
-        parse_mode='md'
-    )
-    
-    result = await PhoneRevealer.reveal_phone(username)
-    
-    if result.get("phone_found"):
-        text = f"✅ **تم العثور على الرقم!**\n\n"
-        text += f"📞 الرقم: `{result['phone']}`\n"
-        text += f"🔢 عدد المحاولات: {result['attempts']}\n"
-        text += f"🛠️ الطريقة: {result['method']}"
-    else:
-        text = f"❌ **لم يتم العثور على الرقم**\n\n"
-        text += f"🔢 عدد المحاولات: {result.get('attempts', 0)}\n"
-        text += "💡 الرقم غير مكشوف ولم نتمكن من تحديده"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-async def handle_scrape(event, user_id, keyword):
-    loading = await event.respond(f"🔍 **جاري البحث عن: {keyword}**", parse_mode='md')
-    
-    results = await GroupScraper.search_groups(keyword, 30)
-    
-    if results:
-        text = f"🔍 **نتائج البحث عن: {keyword}**\n\n"
-        text += f"✅ تم العثور على {len(results)} نتيجة\n\n"
-        
-        for i, group in enumerate(results[:20], 1):
-            text += f"{i}. {group.get('title', group.get('username', ''))}\n"
-            text += f"   👥 {group.get('members', '?')} عضو\n"
-            text += f"   🔗 {group.get('link', '')}\n\n"
-    else:
-        text = f"❌ لم يتم العثور على نتائج لـ: {keyword}"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-async def handle_breach(event, user_id, query):
-    loading = await event.respond("🧬 **جاري فحص التسريبات...**", parse_mode='md')
-    
-    if '@' in query:
-        result = await BreachChecker.check_email(query)
-        text = f"🧬 **فحص التسريبات: {query}**\n\n"
-        text += f"🔢 عدد التسريبات: {result.get('total_breaches', 0)}\n"
-        if result.get('breaches'):
-            text += "\n📋 **التسريبات:**\n"
-            for breach in result['breaches'][:10]:
-                text += f"• {breach.get('Name', breach.get('Title', ''))}\n"
-                text += f"  📅 {breach.get('BreachDate', '')}\n"
-    else:
-        result = await BreachChecker.check_phone(query)
-        text = f"🧬 **فحص التسريبات: {query}**\n\n"
-        text += f"🔍 موجود: {'⚠️ نعم' if result.get('found') else '✅ لا'}\n"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-async def handle_unban(event, user_id, phone, platform):
-    if platform == "telegram":
-        template = UnbanSystem.generate_telegram_unban(phone)
-        emails = UnbanSystem.get_recovery_links("telegram")["emails"]
-    else:
-        template = UnbanSystem.generate_whatsapp_unban(phone)
-        emails = UnbanSystem.get_recovery_links("whatsapp")["emails"]
-    
-    text = f"🔓 **طلب فك حظر {platform}**\n\n"
-    text += "📧 **أرسل لإيميلات:**\n"
-    for email in emails:
-        text += f"• `{email}`\n"
-    text += "\n📝 **نص الطلب:**\n"
-    text += f"```\n{template[:1000]}\n```"
-    
-    await event.respond(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
-
-# ==================== أزرار إضافية ====================
-@bot.on(events.CallbackQuery(data=b"unban_telegram"))
-async def unban_tg(event):
-    user_id = event.sender_id
-    user_states[user_id] = "unban_telegram"
-    await event.edit(
-        "🔓 **فك حظر تيليجرام**\n\n"
-        "📤 أرسل رقم الهاتف:\n"
-        "مثال: +201234567890",
-        buttons=[[Button.inline("🔙 رجوع", b"unban")]],
-        parse_mode='md'
-    )
-
-@bot.on(events.CallbackQuery(data=b"unban_whatsapp"))
-async def unban_wa(event):
-    user_id = event.sender_id
-    user_states[user_id] = "unban_whatsapp"
-    await event.edit(
-        "🔓 **فك حظر واتساب**\n\n"
-        "📤 أرسل رقم الهاتف:\n"
-        "مثال: +201234567890",
-        buttons=[[Button.inline("🔙 رجوع", b"unban")]],
-        parse_mode='md'
-    )
-
-@bot.on(events.CallbackQuery(data=b"analyze_group"))
-async def analyze_group_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "analyze_group"
-    await event.edit(
-        "📊 **تحليل جروب/قناة**\n\n"
-        "📤 أرسل يوزر الجروب:\n"
-        "مثال: @groupname",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
-
-async def handle_analyze_group(event, user_id, username):
-    loading = await event.respond("📊 **جاري التحليل...**", parse_mode='md')
-    
-    result = await GroupAnalyzer.analyze_chat(username.replace("@", ""))
-    
-    if "error" in result:
-        await loading.edit(f"❌ {result['error']}", 
-                         buttons=[[Button.inline("🔙 رجوع", b"main_menu")]])
-        return
-    
-    basic = result.get("basic", {})
-    stats = result.get("stats", {})
-    
-    text = f"📊 **تحليل: {basic.get('title', username)}**\n\n"
-    text += f"🆔 ID: `{basic.get('id')}`\n"
-    text += f"📋 النوع: {basic.get('type')}\n"
-    text += f"✅ موثق: {'نعم' if basic.get('verified') else 'لا'}\n"
-    text += f"👥 الأعضاء: {stats.get('members', 0):,}\n"
-    text += f"📊 الحجم: {stats.get('size')}\n"
-    text += f"📝 الوصف: {stats.get('description', 'لا يوجد')[:300]}"
-    
-    await loading.edit(text, buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], parse_mode='md')
+@bot.on(events.CallbackQuery(data=b"analyze"))
+async def analyze(event):
+    user_states[event.sender_id] = "analyze"
+    await event.edit("📊 **تحليل جروب**\n\nأرسل @:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"faker"))
-async def faker_menu(event):
-    await event.edit(
-        "📝 **مزور الرسائل**\n\nاختر المنصة:",
-        buttons=[
-            [Button.inline("📱 تيليجرام", b"faker_tg"),
-             Button.inline("💬 واتساب", b"faker_wa")],
-            [Button.inline("🔙 رجوع", b"main_menu")],
-        ],
-        parse_mode='md'
-    )
+async def faker(event):
+    await event.edit("📝 **مزور**\n\nاختر:", buttons=[
+        [Button.inline("📱 تيليجرام", b"fk_tg"), Button.inline("💬 واتساب", b"fk_wa")],
+        [Button.inline("🔙", b"main")]
+    ], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"faker_tg"))
-async def faker_tg_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "faker_telegram"
-    await event.edit(
-        "📝 **رسالة تيليجرام مزيفة**\n\n"
-        "📤 أرسل: الاسم | الرسالة\n"
-        "مثال: أحمد | مرحبا كيف حالك",
-        buttons=[[Button.inline("🔙 رجوع", b"faker")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"fk_tg"))
+async def fk_tg(event):
+    user_states[event.sender_id] = "fk_tg"
+    await event.edit("📝 **تيليجرام**\n\nأرسل: الاسم|الرسالة", buttons=[[Button.inline("🔙", b"faker")]], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"faker_wa"))
-async def faker_wa_start(event):
-    user_id = event.sender_id
-    user_states[user_id] = "faker_whatsapp"
-    await event.edit(
-        "📝 **رسالة واتساب مزيفة**\n\n"
-        "📤 أرسل: الاسم | الرسالة\n"
-        "مثال: محمد | السلام عليكم",
-        buttons=[[Button.inline("🔙 رجوع", b"faker")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"fk_wa"))
+async def fk_wa(event):
+    user_states[event.sender_id] = "fk_wa"
+    await event.edit("📝 **واتساب**\n\nأرسل: الاسم|الرسالة", buttons=[[Button.inline("🔙", b"faker")]], parse_mode='md')
 
-async def handle_faker(event, user_id, text, platform):
-    parts = text.split("|", 1)
-    if len(parts) < 2:
-        await event.respond("❌ استخدم: الاسم | الرسالة")
-        return
-    
-    name = parts[0].strip()
-    message = parts[1].strip()
-    
-    if platform == "telegram":
-        img = await MessageFaker.create_fake_telegram_message(name, message)
-    else:
-        img = await MessageFaker.create_fake_whatsapp_message(name, message)
-    
-    await bot.send_file(event.chat_id, img, 
-                       caption=f"📝 رسالة {platform} مزيفة\n⚠️ للأغراض التعليمية",
-                       buttons=[[Button.inline("🔙 رجوع", b"faker")]])
+@bot.on(events.CallbackQuery(data=b"wa"))
+async def wa(event):
+    user_states[event.sender_id] = "wa"
+    await event.edit("📱 **واتساب**\n\nأرسل الرقم:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"whatsapp"))
-async def whatsapp_menu(event):
-    user_id = event.sender_id
-    user_states[user_id] = "whatsapp_check"
-    await event.edit(
-        "📱 **أدوات واتساب**\n\n"
-        "📤 أرسل رقم الهاتف للفحص:\n"
-        "مثال: +201234567890",
-        buttons=[[Button.inline("🔙 رجوع", b"main_menu")]],
-        parse_mode='md'
-    )
+@bot.on(events.CallbackQuery(data=b"checkreg"))
+async def checkreg(event):
+    user_states[event.sender_id] = "checkreg"
+    await event.edit("📞 **فحص رقم**\n\nأرسل الرقم:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
-@bot.on(events.CallbackQuery(data=b"view_report"))
-async def view_report(event):
-    user_id = event.sender_id
-    data = pending_data.get(user_id, {})
-    report = data.get("full_report", {})
-    
-    if not report:
-        await event.answer("❌ البلاغ غير متاح", alert=True)
-        return
-    
-    text = f"📋 **البلاغ الكامل**\n\n"
-    if report.get("platform") == "telegram" or not report.get("platform"):
-        text += f"```\n{report.get('telegram_report', '')[:3000]}\n```"
-    else:
-        text += f"```\n{report.get('whatsapp_report', '')[:3000]}\n```"
-    
-    await event.edit(text, 
-                    buttons=[[Button.inline("🔙 رجوع", b"reports")]], 
-                    parse_mode='md')
-
-@bot.on(events.CallbackQuery(data=b"view_emails"))
-async def view_emails(event):
-    text = """
-📧 **إيميلات البلاغات الرسمية**
-
-**تيليجرام:**
-• abuse@telegram.org - بلاغات عامة
-• stopca@telegram.org - استغلال أطفال
-• dmca@telegram.org - حقوق ملكية
-• security@telegram.org - أمان
-• recover@telegram.org - استرداد حساب
-
-**واتساب:**
-• support@whatsapp.com - دعم عام
-• android_web@support.whatsapp.com
-• iphone_web@support.whatsapp.com
-
-**روابط:**
-• telegram.org/support
-• whatsapp.com/contact
-    """
-    await event.edit(text, 
-                    buttons=[[Button.inline("🔙 رجوع", b"reports")]], 
-                    parse_mode='md')
+@bot.on(events.CallbackQuery(data=b"convert"))
+async def convert(event):
+    user_states[event.sender_id] = "convert"
+    await event.edit("🔄 **تحويل ID↔يوزر**\n\nأرسل @ أو ID:", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
 @bot.on(events.CallbackQuery(data=b"info"))
-async def info_handler(event):
-    text = """
-🧨 **NinjaGram Pro Max Ultra v9.0**
+async def info(event):
+    await event.edit("""🧨 **NinjaGram Pro Max Ultra v10**
 
-🛡️ أقوى بوت أدوات تيليجرام وواتساب
+أقوى بوت في الكوكب
+20+ خدمة فتاكة
+بلاغات - OSINT - كشف أرقام
+تسريبات - صيد - مزور
 
-⚡ **الخدمات:**
-• 📞 تروكولر حقيقي
-• 🔫 15 نوع بلاغات
-• 🕵️ OSINT متقدم
-• 📞 كشف رقم (Russian Method)
-• 🔍 تجميع جروبات عربي
-• 🔓 فك حظر تيليجرام وواتساب
-• 🧬 فحص تسريبات حقيقي
-• 💣 صيد يوزرات
-• 📊 تحليل جروبات
-• 📝 مزور رسائل
-
-⚠️ للأغراض التعليمية والأمنية
 👨‍💻 @NinjaGram
-📢 @Q_g_r_a_m
-    """
-    await event.edit(text, 
-                    buttons=[[Button.inline("🔙 رجوع", b"main_menu")]], 
-                    parse_mode='md')
+📢 @Q_g_r_a_m""", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
 
-# ==================== تشغيل البوت ====================
-async def main():
-    print("""
-╔══════════════════════════════════════════╗
-║     🧨 NinjaGram Pro Max Ultra v9.0    ║
-║     Ultimate Telegram/WhatsApp Tool     ║
-║     Developer: @NinjaGram               ║
-║     Channel: @Q_g_r_a_m                 ║
-╚══════════════════════════════════════════╝
-    """)
+# ============================================================
+@bot.on(events.NewMessage(func=lambda e: e.sender_id in user_states and not e.text.startswith('/')))
+async def handle(event):
+    uid = event.sender_id
+    st = user_states.pop(uid, None)
+    txt = event.text.strip()
+    if not st: return
+    try:
+        if st == "tc":
+            ld = await event.respond("📞 **بحث...**")
+            if txt.startswith('+') or any(c.isdigit() for c in txt[:3]):
+                r = await Truecaller.lookup(txt)
+                out = f"📞 **{r['phone']}**\n✅ {'نعم' if r['valid'] else 'لا'} | 📡 {r['carrier']}\n🌍 {r['country']} | 📍 {r['location']}\n⚠️ سبام: {r['spam']} | 🎯 {r['risk']}/100 {r['level']}"
+                if r['social']: out += f"\n📱 {', '.join(r['social'][:6])}"
+            else:
+                res = await Truecaller.reverse(txt)
+                out = f"🔍 **{txt}**\n\n" + ("\n".join([f"📞 {x['phone']}" for x in res[:12]]) if res else "❌ لا نتائج")
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+        
+        elif st == "rpt_tgt":
+            d = pending_data.pop(uid, {})
+            rt = d.get("rt", "spam")
+            p = "telegram" if d.get("p") == "tg" else "whatsapp"
+            ld = await event.respond("🔫 **بلاغ...**")
+            r = Reporter.generate(rt, txt, p)
+            await ld.edit(f"🔫 **{r['type']}**\n📋 `{r['id']}`\n⚠️ {r['severity'].upper()}\n📧 `{r['email']}`\n\n```{r['body'][:1500]}```", buttons=[[Button.inline("🔙", b"rpt")]], parse_mode='md')
+        
+        elif st == "osint":
+            ld = await event.respond("🕵️ **فحص...**")
+            r = await Osint.deep(txt)
+            if "error" in r:
+                await ld.edit(f"❌ {r['error']}", buttons=[[Button.inline("🔙", b"main")]])
+                return
+            out = f"🕵️ **OSINT**\n\n📋 ID: `{r['basic'].get('id')}`\n🔖 @{r['basic'].get('username')}\n👤 {r['basic'].get('full')}\n📞 {r['basic'].get('phone')}\n✅ {r['basic'].get('verified')} | ⭐ {r['basic'].get('premium')}\n⚠️ احتيال: {r['basic'].get('scam')}"
+            if r['activity'].get('created'):
+                out += f"\n📅 {r['activity'].get('created')} | ⏳ {r['activity'].get('age')}"
+            if r['security']:
+                out += f"\n\n⚠️ **الأمان:**\n" + "\n".join([f"• {i}" for i in r['security'][:8]])
+            out += f"\n\n🎯 **الخطورة:** {r['risk']}/100 {r.get('risk_level','?')}"
+            if r.get('exposed', {}).get('emails'):
+                out += f"\n📧 {', '.join(r['exposed']['emails'][:4])}"
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+        
+        elif st == "rv_tgt":
+            d = pending_data.pop(uid, {})
+            cc = d.get("cc", "20")
+            ld = await event.respond("📞 **كشف الرقم...**\n⏳ يستغرق وقتاً")
+            r = await PhoneRevealer.reveal(txt, cc)
+            if r["found"]:
+                out = f"✅ **تم!**\n📞 `{r['phone']}`\n🔢 {r['tries']} | ⏱️ {r['time']}s"
+            else:
+                out = f"❌ **فشل**\n🔢 {r['tries']} | ⏱️ {r['time']}s"
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"reveal")]], parse_mode='md')
+        
+        elif st == "scrape":
+            ld = await event.respond(f"🔍 **{txt}**")
+            res = await GroupScraper.search(txt)
+            if res:
+                out = f"🔍 **{txt}**\n\n" + "\n".join([f"{i+1}. [{g.get('title',g.get('username'))}]({g.get('link')}) | {g.get('members',0)}" for i,g in enumerate(res[:15])])
+            else:
+                out = f"❌ لا نتائج"
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+        
+        elif st == "ub_tg":
+            await event.respond(Unban.telegram(txt), buttons=[[Button.inline("🔙", b"unban")]], parse_mode='md')
+        
+        elif st == "ub_wa":
+            await event.respond(Unban.whatsapp(txt), buttons=[[Button.inline("🔙", b"unban")]], parse_mode='md')
+        
+        elif st == "breach":
+            ld = await event.respond("🧬 **فحص...**")
+            r = await Breach.check(txt)
+            out = f"🧬 **{txt}**\n🔢 تسريبات: {r['count']}\n" + "\n".join([f"• {b['name']} ({b['date']})" for b in r.get('breaches',[])[:10]])
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+        
+        elif st == "analyze":
+            ld = await event.respond("📊 **تحليل...**")
+            try:
+                e = await bot.get_entity(txt.replace("@", ""))
+                fc = await bot(GetFullChannelRequest(e))
+                out = f"📊 **{getattr(e,'title',txt)}**\n🆔 `{e.id}`\n👥 {getattr(fc.full_chat,'participants_count',0):,}\n📝 {getattr(fc.full_chat,'about','')[:300]}"
+                await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+            except:
+                await ld.edit("❌ غير موجود", buttons=[[Button.inline("🔙", b"main")]])
+        
+        elif st == "fk_tg":
+            if '|' in txt:
+                n, m = txt.split('|', 1)
+                img = await Faker.telegram(n.strip(), m.strip())
+                await bot.send_file(event.chat_id, img, caption="📝 تعليمي", buttons=[[Button.inline("🔙", b"faker")]])
+            else:
+                await event.respond("❌ الاسم|الرسالة", buttons=[[Button.inline("🔙", b"faker")]])
+        
+        elif st == "fk_wa":
+            if '|' in txt:
+                n, m = txt.split('|', 1)
+                img = await Faker.whatsapp(n.strip(), m.strip())
+                await bot.send_file(event.chat_id, img, caption="📝 تعليمي", buttons=[[Button.inline("🔙", b"faker")]])
+            else:
+                await event.respond("❌ الاسم|الرسالة", buttons=[[Button.inline("🔙", b"faker")]])
+        
+        elif st == "wa":
+            await event.respond(f"📱 https://wa.me/{txt.replace('+','')}", buttons=[[Button.inline("🔙", b"main")]])
+        
+        elif st == "checkreg":
+            ld = await event.respond("📞 **فحص...**")
+            r = await PhoneRevealer.check(txt)
+            if r["registered"]:
+                u = r["user"]
+                out = f"✅ **مسجل**\n🆔 `{u['id']}`\n👤 {u['name']}\n🔖 @{u.get('username','لا')}"
+            else:
+                out = "❌ غير مسجل"
+            await ld.edit(out, buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+        
+        elif st == "convert":
+            try:
+                e = await bot.get_entity(int(txt) if txt.lstrip('-').isdigit() else txt.replace("@", ""))
+                un = getattr(e, 'username', None)
+                await event.respond(f"🔄\n🆔 `{e.id}`\n🔖 @{un or 'لا'}\n👤 {getattr(e,'first_name','')} {getattr(e,'last_name','')}", buttons=[[Button.inline("🔙", b"main")]], parse_mode='md')
+            except:
+                await event.respond("❌ غير موجود", buttons=[[Button.inline("🔙", b"main")]])
     
-    await bot.start(bot_token=BOT_TOKEN)
-    me = await bot.get_me()
-    logger.info(f"Bot started as @{me.username}")
-    print(f"✅ Bot running as @{me.username}")
-    print("📡 Ready for commands...")
-    
-    await bot.run_until_disconnected()
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await event.respond(f"❌ خطأ: {str(e)[:150]}", buttons=[[Button.inline("🔙", b"main")]])
 
-if __name__ == '__main__':
-    asyncio.run(main())
+logger.info("✅ NinjaGram Pro Max Ultra v10 Ready")
